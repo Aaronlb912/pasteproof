@@ -2,6 +2,7 @@ import { defineConfig } from 'wxt';
 
 // See https://wxt.dev/api/config.html
 export default defineConfig({
+  srcDir: 'src',
   manifest: {
     name: 'Paste Proof',
     description: 'Your pasteboard bodyguard. Prevents you from pasting sensitive data into the wrong fields.',
@@ -21,6 +22,7 @@ export default defineConfig({
       '16': 'assets/icons/pasteproof-16.png',
       '48': 'assets/icons/pasteproof-48.png',
       '128': 'assets/icons/pasteproof-128.png',
+      '500': 'assets/icons/pasteproof-500.png',
     },
   },
 });

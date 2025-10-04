@@ -6,8 +6,8 @@ function App() {
     <div className="App">
       <header>
         {/* You can place the icon SVG or an <img> tag here */}
-        <h1>Paste Proof</h1>
-        <p>Your pasteboard bodyguard.</p>
+        <h1>PasteProof</h1>
+        <p>Your copy/paste bodyguard.</p>
       </header>
       <main>
         <p>Ready to protect your data.</p>
