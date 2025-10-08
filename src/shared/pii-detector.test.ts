@@ -14,7 +14,6 @@ it('should detect multiple PII types in one string', () => {
   // Use a standard, known-valid Luhn number (Stripe's test Visa)
   const text = 'email jdoe@pasteproof.com and use card 4242 4242 4242 4242';
   const results = detectPii(text);
-  console.log('results', results);
   expect(results).toHaveLength(2);
   expect(results.some(r => r.type === PiiType.Email)).toBe(true);
   expect(results.some(r => r.type === PiiType.CreditCard)).toBe(true);
