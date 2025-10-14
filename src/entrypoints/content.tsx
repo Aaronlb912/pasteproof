@@ -80,7 +80,7 @@ function SimpleWarningBadge({
           style={{
             position: 'absolute',
             top: '100%',
-            right: '0',
+            left: '100%',
             marginTop: '8px',
             backgroundColor: 'white',
             border: '1px solid #ddd',
