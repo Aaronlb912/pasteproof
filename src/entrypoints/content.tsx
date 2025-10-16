@@ -8,33 +8,43 @@ import type { Root } from 'react-dom/client';
 import { getApiClient, initializeApiClient } from '@/shared/api-client';
 import { SimpleWarningBadge } from '@/shared/components';
 
+let authToken: string | null = null;
+
 export default defineContentScript({
   matches: ['<all_urls>'],
 
   async main(ctx) {
     // Check if extension is enabled
-    const { enabled = true } = await browser.storage.local.get('enabled');
+    const storage = await browser.storage.local.get(['authToken', 'enabled']);
+    authToken = storage.authToken || null;
+    
+    const enabled = storage.enabled !== false;
+
     if (!enabled) {
       console.log('Paste Proof is disabled');
       return;
     }
-
-    // Check if current site is whitelisted
-    const currentDomain = window.location.hostname;
-    const { apiKey } = await browser.storage.local.get('apiKey');
     
-    if (apiKey) {
+    // Check if current site is whitelisted
+    if (authToken) {
+      const currentDomain = window.location.hostname;
       try {
-        const client = initializeApiClient(apiKey);
-        const isWhitelisted = await client.isWhitelisted(currentDomain);
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/whitelist/check/${currentDomain}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${authToken}`,
+            },
+          }
+        );
+        const data = await response.json();
         
-        if (isWhitelisted) {
+        if (data.whitelisted) {
           console.log(`Paste Proof: ${currentDomain} is whitelisted - skipping`);
           return;
         }
       } catch (error) {
         console.error('Failed to check whitelist:', error);
-        // Continue with detection if check fails
       }
     }
 

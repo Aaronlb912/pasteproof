@@ -1,7 +1,14 @@
 import { useState, useEffect } from 'react';
 import { getApiClient, initializeApiClient } from '@/shared/api-client';
 
+type User = {
+  id: string;
+  email: string;
+  name?: string;
+};
+
 type PopupState = {
+  isAuthenticated: boolean;
   enabled: boolean;
   currentDomain: string;
   isWhitelisted: boolean;
@@ -10,6 +17,7 @@ type PopupState = {
 
 export default function PopupApp() {
   const [state, setState] = useState<PopupState>({
+    isAuthenticated: false,
     enabled: true,
     currentDomain: '',
     isWhitelisted: false,
@@ -32,25 +40,32 @@ export default function PopupApp() {
       const { enabled = true } = await browser.storage.local.get('enabled');
 
       // Check if user has API key
-      const { apiKey } = await browser.storage.local.get('apiKey');
-      const hasApiKey = !!apiKey;
+            const { authToken, user } = await browser.storage.local.get(['authToken', 'user']);
+
+      const isAuthenticated = !!(authToken && user);
 
       // Check if current site is whitelisted
       let isWhitelisted = false;
-      if (hasApiKey && apiKey) {
+      if (isAuthenticated) {
         try {
-          const client = initializeApiClient(apiKey);
-          isWhitelisted = await client.isWhitelisted(domain);
+          const response = await fetch(`${import.meta.env.VITE_API_URL}/api/whitelist/check/${domain}`, {
+            headers: {
+              'Authorization': `Bearer ${authToken}`,
+            },
+          });
+          const data = await response.json();
+          isWhitelisted = data.whitelisted;
         } catch (error) {
           console.error('Failed to check whitelist:', error);
         }
       }
 
       setState({
+        isAuthenticated,
+        user: user || null,
         enabled,
         currentDomain: domain,
         isWhitelisted,
-        hasApiKey,
       });
     } catch (error) {
       console.error('Failed to load popup state:', error);
@@ -59,6 +74,41 @@ export default function PopupApp() {
     }
   };
 
+const signIn = async () => {
+  try {
+    // Open web portal in new tab for authentication
+    const authUrl = `${import.meta.env.VITE_WEB_URL}/auth/extension`;
+    
+    await browser.tabs.create({ 
+      url: authUrl,
+      active: true 
+    });
+
+    // Show a helpful message
+    alert('Please sign in on the opened tab. After signing in, reopen this popup to see your authenticated state.');
+    
+    // Close popup so user focuses on auth tab
+    window.close();
+    
+  } catch (error) {
+    console.error('Sign in error:', error);
+    alert('Failed to open sign in page');
+  }
+};
+
+
+  const signOut = async () => {
+    if (!confirm('Sign out of Paste Proof?')) return;
+    
+    await browser.storage.local.remove(['authToken', 'user']);
+    setState({
+      ...state,
+      isAuthenticated: false,
+      user: null,
+    });
+  };
+  
+
   const toggleEnabled = async () => {
     const newEnabled = !state.enabled;
     await browser.storage.local.set({ enabled: newEnabled });
@@ -66,25 +116,43 @@ export default function PopupApp() {
   };
 
   const toggleWhitelist = async () => {
-    if (!state.hasApiKey) {
-      alert('Please configure your API key in Settings first');
+    if (!state.isAuthenticated) {
+      alert('Please sign in first');
       return;
     }
 
     try {
-      const client = getApiClient();
+      const { authToken } = await browser.storage.local.get('authToken');
       if (!client) return;
 
       if (state.isWhitelisted) {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/whitelist`, {
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+          },
+        });
         // Remove from whitelist (we need to get the whitelist ID first)
-        const whitelist = await client.getWhitelist();
+        const whitelist = await await response.json();
         const entry = whitelist.find(w => w.domain === state.currentDomain);
+       
         if (entry) {
-          await client.removeFromWhitelist(entry.id);
+          await fetch(`${import.meta.env.VITE_API_URL}/api/whitelist/${entry.id}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${authToken}`,
+            },
+          });
         }
       } else {
         // Add to whitelist
-        await client.addToWhitelist(state.currentDomain);
+        await fetch(`${import.meta.env.VITE_API_URL}/api/whitelist`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({ domain: state.currentDomain }),
+        });
       }
 
       setState({ ...state, isWhitelisted: !state.isWhitelisted });
@@ -94,9 +162,13 @@ export default function PopupApp() {
     }
   };
 
-  const openOptions = (tab?: string) => {
-    const url = tab ? `options.html#${tab}` : 'options.html';
-    browser.runtime.openOptionsPage();
+  // const openOptions = (tab?: string) => {
+  //   const url = tab ? `options.html#${tab}` : 'options.html';
+  //   browser.runtime.openOptionsPage();
+  // };
+
+  const openDashboard = () => {
+    browser.tabs.create({ url: `${import.meta.env.VITE_WEB_URL}/dashboard` });
   };
 
   if (loading) {
@@ -113,83 +185,86 @@ export default function PopupApp() {
       <div style={styles.header}>
         <div style={styles.headerIcon}>🛡️</div>
         <div>
-          <div style={styles.title}>Paste Proof</div>
-          <div style={styles.subtitle}>Your pasteboard bodyguard</div>
+          <div style={styles.title}>PasteProof</div>
+          <div style={styles.subtitle}>Your copy/paste bodyguard</div>
         </div>
       </div>
 
-      {/* Status Badge */}
-      <div style={{
-        ...styles.statusBadge,
-        backgroundColor: state.enabled ? '#e8f5e9' : '#ffebee',
-      }}>
-        <div style={{
-          ...styles.statusDot,
-          backgroundColor: state.enabled ? '#4caf50' : '#f44336',
-        }} />
-        <span style={{
-          color: state.enabled ? '#2e7d32' : '#c62828',
-          fontWeight: '600',
-        }}>
-          {state.enabled ? 'Protection Active' : 'Protection Disabled'}
-        </span>
-      </div>
 
-      {/* Current Site */}
-      <div style={styles.section}>
-        <div style={styles.sectionLabel}>Current Site</div>
-        <div style={styles.domain}>{state.currentDomain}</div>
-      </div>
-
-      {/* Controls */}
-      <div style={styles.controls}>
-        <button
-          onClick={toggleEnabled}
-          style={{
-            ...styles.button,
-            ...styles.buttonPrimary,
-          }}
-        >
-          {state.enabled ? '⏸️ Disable' : '▶️ Enable'} Protection
-        </button>
-
-        <button
-          onClick={toggleWhitelist}
-          disabled={!state.hasApiKey}
-          style={{
-            ...styles.button,
-            ...styles.buttonSecondary,
-            ...(state.isWhitelisted ? styles.buttonDanger : {}),
-            ...(!state.hasApiKey ? styles.buttonDisabled : {}),
-          }}
-        >
-          {state.isWhitelisted ? '✗ Remove from' : '✓ Add to'} Whitelist
-        </button>
-      </div>
-
-      {!state.hasApiKey && (
-        <div style={styles.warning}>
-          ⚠️ Configure API key for Premium features
+            {/* Not Authenticated */}
+      {!state.isAuthenticated && (
+        <div style={{ textAlign: 'center', padding: '20px' }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔒</div>
+          <p style={{ color: '#666', marginBottom: '16px' }}>
+            Sign in to unlock Premium features
+          </p>
+          <button onClick={signIn} style={{ ...styles.button, ...styles.buttonPrimary }}>
+            Sign In
+          </button>
         </div>
       )}
 
-      {/* Quick Links */}
-      <div style={styles.divider} />
+      {state.isAuthenticated && (
+        <>
+          {/* Status Badge */}
+          <div
+            style={{
+              ...styles.statusBadge,
+              backgroundColor: state.enabled ? '#e8f5e9' : '#ffebee',
+            }}
+          >
+            <div
+              style={{
+                ...styles.statusDot,
+                backgroundColor: state.enabled ? '#4caf50' : '#f44336',
+              }}
+            />
+            <span
+              style={{
+                color: state.enabled ? '#2e7d32' : '#c62828',
+                fontWeight: '600',
+              }}
+            >
+              {state.enabled ? 'Protection Active' : 'Protection Disabled'}
+            </span>
+          </div>
 
-      <div style={styles.links}>
-        <button onClick={() => openOptions('settings')} style={styles.link}>
-          ⚙️ Settings
-        </button>
-        <button onClick={() => openOptions('patterns')} style={styles.link}>
-          🔍 Patterns
-        </button>
-        <button onClick={() => openOptions('whitelist')} style={styles.link}>
-          ✓ Whitelist
-        </button>
-        <button onClick={() => openOptions('dashboard')} style={styles.link}>
-          📊 Dashboard
-        </button>
-      </div>
+          {/* Current Site */}
+          <div style={styles.section}>
+            <div style={styles.sectionLabel}>Current Site</div>
+            <div style={styles.domain}>{state.currentDomain}</div>
+          </div>
+
+          {/* Controls */}
+          <div style={styles.controls}>
+            <button onClick={toggleEnabled} style={{ ...styles.button, ...styles.buttonPrimary }}>
+              {state.enabled ? '⏸️ Disable' : '▶️ Enable'} Protection
+            </button>
+
+            <button
+              onClick={toggleWhitelist}
+              style={{
+                ...styles.button,
+                ...(state.isWhitelisted ? styles.buttonDanger : styles.buttonSecondary),
+              }}
+            >
+              {state.isWhitelisted ? '✗ Remove from' : '✓ Add to'} Whitelist
+            </button>
+          </div>
+
+          {/* Quick Links */}
+          <div style={styles.divider} />
+
+          <div style={styles.links}>
+            <button onClick={openDashboard} style={styles.link}>
+              📊 Dashboard
+            </button>
+            <button onClick={signOut} style={styles.link}>
+              🚪 Sign Out
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -221,7 +296,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#333',
   },
   subtitle: {
-    fontSize: '12px',
+    fontSize: '11px',
     color: '#666',
   },
   statusBadge: {
@@ -282,20 +357,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   buttonDanger: {
     backgroundColor: '#f44336',
-  },
-  buttonDisabled: {
-    backgroundColor: '#ccc',
-    cursor: 'not-allowed',
-    opacity: 0.6,
-  },
-  warning: {
-    fontSize: '12px',
-    color: '#ff9800',
-    backgroundColor: '#fff3e0',
-    padding: '8px',
-    borderRadius: '4px',
-    marginBottom: '16px',
-    textAlign: 'center',
+    color: 'white',
   },
   divider: {
     height: '1px',
