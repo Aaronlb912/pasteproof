@@ -483,7 +483,10 @@ export default defineContentScript({
         });
       }
 
-      if (detections.length > 0 && activeInput) {
+      // Show badge if EITHER pattern detections OR AI detections exist
+      const hasDetections = detections.length > 0 || (aiDetections && aiDetections.length > 0);
+
+      if (hasDetections && activeInput) {
         const currentText = getInputValue(activeInput);
 
         if (!badgeContainer) {
@@ -547,7 +550,6 @@ export default defineContentScript({
     // Debounced scan with AI scan and optimization
     const debouncedScan = debounce(async (text: string, input: HTMLElement) => {
       const results = detectPii(text);
-      
       let aiDetections: any[] | null = null;
       if (autoAiScan && aiScanOptimizer.shouldScan(text)) {
         if (aiScanOptimizer.hasSignificantChange(lastScannedText, text)) {
@@ -589,7 +591,6 @@ export default defineContentScript({
         activeInput = target as HTMLInputElement | HTMLTextAreaElement;
         const currentValue = getInputValue(activeInput);
         const results = detectPii(currentValue);
-        
         let aiDetections: any[] | null = null;
         if (autoAiScan && aiScanOptimizer.shouldScan(currentValue)) {
           aiDetections = await performAiScan(activeInput, currentValue);

@@ -26,6 +26,7 @@ export function SimpleWarningBadge({
     initialAiDetections && initialAiDetections.length > 0 ? 'ai' : 'regex'
   );
   const [_, setSuccess] = useState<string>('')
+  
   // Update AI detections when prop changes
   useEffect(() => {
     if (initialAiDetections) {
@@ -111,6 +112,7 @@ export function SimpleWarningBadge({
   };
 
   const totalDetections = detections.length + (aiDetections?.length || 0);
+  const hasAiDetections = aiDetections && aiDetections.length > 0;
 
   return (
     <div style={{ position: "relative", zIndex: 10000 }}>
@@ -123,8 +125,8 @@ export function SimpleWarningBadge({
           justifyContent: "center",
           width: "28px",
           height: "28px",
-          backgroundColor: aiDetections && aiDetections.length > 0 ? "#f3e5f5" : "#fff3cd",
-          border: aiDetections && aiDetections.length > 0 ? "2px solid #9c27b0" : "2px solid #ffc107",
+          backgroundColor: hasAiDetections ? "#f3e5f5" : "#fff3cd",
+          border: hasAiDetections ? "2px solid #9c27b0" : "2px solid #ffc107",
           borderRadius: "50%",
           cursor: "pointer",
           boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
@@ -140,7 +142,7 @@ export function SimpleWarningBadge({
         >
           <path
             d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
-            fill={aiDetections && aiDetections.length > 0 ? "#9c27b0" : "#ff9800"}
+            fill={hasAiDetections ? "#9c27b0" : "#ff9800"}
           />
         </svg>
         {totalDetections > 0 && (
@@ -228,7 +230,7 @@ export function SimpleWarningBadge({
                 fontSize: "13px",
               }}
             >
-              Pattern Match ({detections.length})
+              Pattern Match {detections.length > 0 && `(${detections.length})`}
             </button>
             <button
               type="button"
@@ -249,79 +251,81 @@ export function SimpleWarningBadge({
                 fontSize: "13px",
               }}
             >
-              🤖 AI Scan {aiDetections ? `(${aiDetections.length})` : ''}
+              🤖 AI Scan {aiDetections && aiDetections.length > 0 && `(${aiDetections.length})`}
             </button>
           </div>
 
           <div style={{ maxHeight: "400px", overflowY: "auto" }}>
             {activeTab === 'regex' ? (
               <>
-                {detections.map((d, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      padding: "10px",
-                      marginBottom: "8px",
-                      backgroundColor: "#f8f9fa",
-                      borderRadius: "6px",
-                      border: "1px solid #e9ecef",
-                    }}
-                  >
+                {detections.length > 0 ? (
+                  detections.map((d, idx) => (
                     <div
+                      key={idx}
                       style={{
-                        fontWeight: "600",
-                        color: "#ff9800",
-                        marginBottom: "6px",
-                        fontSize: "12px",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.5px",
-                      }}
-                    >
-                      {d.type.replace(/_/g, " ")}
-                    </div>
-                    <div
-                      style={{
+                        padding: "10px",
                         marginBottom: "8px",
-                        color: "#666",
-                        wordBreak: "break-all",
-                        fontFamily: "monospace",
-                        fontSize: "13px",
-                        padding: "6px",
-                        backgroundColor: "white",
-                        borderRadius: "4px",
+                        backgroundColor: "#fff3cd",
+                        borderRadius: "6px",
+                        border: "1px solid #ffc107",
                       }}
                     >
-                      {d.value}
+                      <div
+                        style={{
+                          fontWeight: "600",
+                          color: "#ff9800",
+                          marginBottom: "6px",
+                          fontSize: "12px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.5px",
+                        }}
+                      >
+                        {d.type.replace(/_/g, " ")}
+                      </div>
+                      <div
+                        style={{
+                          marginBottom: "8px",
+                          color: "#666",
+                          wordBreak: "break-all",
+                          fontFamily: "monospace",
+                          fontSize: "13px",
+                          padding: "6px",
+                          backgroundColor: "white",
+                          borderRadius: "4px",
+                        }}
+                      >
+                        {d.value}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => handleAnonymizeClick(d, e)}
+                        style={{
+                          backgroundColor: "#ff9800",
+                          color: "white",
+                          border: "none",
+                          padding: "6px 12px",
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                          fontSize: "13px",
+                          fontWeight: "500",
+                          width: "100%",
+                        }}
+                        onMouseEnter={(e) => {
+                          (e.target as HTMLButtonElement).style.backgroundColor = "#f57c00";
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.target as HTMLButtonElement).style.backgroundColor = "#ff9800";
+                        }}
+                      >
+                        Anonymize This
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleAnonymizeClick(d);
-                      }}
-                      style={{
-                        backgroundColor: "#ff9800",
-                        color: "white",
-                        border: "none",
-                        padding: "6px 12px",
-                        borderRadius: "4px",
-                        cursor: "pointer",
-                        fontSize: "13px",
-                        fontWeight: "500",
-                        width: "100%",
-                      }}
-                      onMouseEnter={(e) => {
-                        (e.target as HTMLButtonElement).style.backgroundColor = "#f57c00";
-                      }}
-                      onMouseLeave={(e) => {
-                        (e.target as HTMLButtonElement).style.backgroundColor = "#ff9800";
-                      }}
-                    >
-                      Anonymize This
-                    </button>
+                  ))
+                ) : (
+                  <div style={{ textAlign: "center", padding: "20px", color: "#666" }}>
+                    No pattern-based detections found
                   </div>
-                ))}
+                )}
 
                 {detections.length > 1 && (
                   <button
