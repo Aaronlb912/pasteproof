@@ -183,9 +183,12 @@ export default defineContentScript({
     await initializeCustomPatterns();
     let activeInput: HTMLInputElement | HTMLTextAreaElement | null = null;
     let badgeContainer: HTMLDivElement | null = null;
+    let dotContainer: HTMLDivElement | null = null;
     let badgeRoot: Root | null = null;
+    let dotRoot: Root | null = null;
     let isPopupOpen = false;
     let lastScannedText = '';
+    let contextMenuInput: HTMLInputElement | HTMLTextAreaElement | null = null;
 
     // Helper function to check if text should be scanned
     const shouldScanText = (text: string): boolean => {
@@ -311,7 +314,13 @@ export default defineContentScript({
       });
 
       const results = detectPii(newValue);
-      handleDetection(results);
+      console.log('detected after anonymize:', results)
+      // Re-scan with AI if auto-scan is enabled
+      let aiDetections: any[] | null = null;
+      if (autoAiScan && aiScanOptimizer.shouldScan(newValue)) {
+        aiDetections = await performAiScan(activeInput, newValue);
+      }
+      handleDetection(results, aiDetections);
     };
 
     // Helper function to create cache key
@@ -462,6 +471,69 @@ export default defineContentScript({
       return container;
     };
 
+    const createDotContainer = (
+      input: HTMLInputElement | HTMLTextAreaElement
+    ): HTMLDivElement => {
+      const container = document.createElement('div');
+      container.id = `pii-dot-${Math.random().toString(36).substr(2, 9)}`;
+
+      // Position dot on right side, slightly below the badge position to avoid overlap
+      container.style.cssText = `
+        position: absolute !important;
+        top: 40px !important;
+        right: 8px !important;
+        z-index: 2147483647 !important;
+        pointer-events: auto !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: auto !important;
+        height: auto !important;
+        transform: translateZ(0) !important;
+        will-change: transform !important;
+        isolation: isolate !important;
+      `;
+
+      let targetParent = input.parentElement;
+      let current = input.parentElement;
+
+      while (current && current !== document.body) {
+        const classList = current.classList;
+        if (
+          classList.contains('input-wrapper') ||
+          classList.contains('text-input-wrapper') ||
+          classList.contains('application-container')
+        ) {
+          targetParent = current;
+          break;
+        }
+
+        const style = window.getComputedStyle(current);
+        if (style.position === 'relative' || style.position === 'absolute') {
+          targetParent = current;
+          break;
+        }
+        current = current.parentElement;
+      }
+
+      if (targetParent) {
+        const parentStyle = window.getComputedStyle(targetParent);
+        if (parentStyle.position === 'static') {
+          (targetParent as HTMLElement).style.position = 'relative';
+        }
+
+        targetParent.appendChild(container);
+      } else {
+        container.style.position = 'fixed !important';
+        const rect = input.getBoundingClientRect();
+        container.style.top = `${rect.top + 40}px !important`;
+        container.style.left = `${rect.right - 20}px !important`;
+        document.body.appendChild(container);
+      }
+
+      return container;
+    };
+
     const handleDetection = async (
       detections: DetectionResult[],
       aiDetections: any[] | null = null
@@ -483,10 +555,12 @@ export default defineContentScript({
         });
       }
 
-      // Show badge if EITHER pattern detections OR AI detections exist
-      const hasDetections = detections.length > 0 || (aiDetections && aiDetections.length > 0);
-
-      if (hasDetections && activeInput) {
+      const hasPatternDetections = detections.length > 0;
+      const hasAiDetections = aiDetections && aiDetections.length > 0;
+      
+      // Show full badge if pattern detections exist
+      if (hasPatternDetections && activeInput) {
+        removeDot(); // Remove dot if full badge is shown
         const currentText = getInputValue(activeInput);
 
         if (!badgeContainer) {
@@ -503,6 +577,7 @@ export default defineContentScript({
               }}
               inputText={currentText}
               initialAiDetections={aiDetections || undefined}
+              variant="full"
             />
           );
         } else if (badgeRoot) {
@@ -515,11 +590,51 @@ export default defineContentScript({
               }}
               inputText={currentText}
               initialAiDetections={aiDetections || undefined}
+              variant="full"
+            />
+          );
+        }
+      } 
+      // Show dot if only AI detections exist (no pattern detections)
+      else if (!hasPatternDetections && hasAiDetections && activeInput) {
+        removeBadge(); // Remove full badge if only showing dot
+        const currentText = getInputValue(activeInput);
+
+        if (!dotContainer) {
+          dotContainer = createDotContainer(activeInput);
+          dotContainer.offsetHeight;
+
+          dotRoot = ReactDOM.createRoot(dotContainer);
+          dotRoot.render(
+            <SimpleWarningBadge
+              detections={[]}
+              onAnonymize={handleAnonymize}
+              onPopupStateChange={isOpen => {
+                isPopupOpen = isOpen;
+              }}
+              inputText={currentText}
+              initialAiDetections={aiDetections || undefined}
+              variant="dot"
+            />
+          );
+        } else if (dotRoot) {
+          dotRoot.render(
+            <SimpleWarningBadge
+              detections={[]}
+              onAnonymize={handleAnonymize}
+              onPopupStateChange={isOpen => {
+                isPopupOpen = isOpen;
+              }}
+              inputText={currentText}
+              initialAiDetections={aiDetections || undefined}
+              variant="dot"
             />
           );
         }
       } else {
+        // No detections at all
         removeBadge();
+        removeDot();
       }
     };
 
@@ -532,6 +647,22 @@ export default defineContentScript({
         badgeContainer.remove();
         badgeContainer = null;
       }
+    };
+
+    const removeDot = () => {
+      if (dotRoot) {
+        dotRoot.unmount();
+        dotRoot = null;
+      }
+      if (dotContainer) {
+        dotContainer.remove();
+        dotContainer = null;
+      }
+    };
+
+    const removeAllIndicators = () => {
+      removeBadge();
+      removeDot();
       isPopupOpen = false;
     };
 
@@ -550,6 +681,7 @@ export default defineContentScript({
     // Debounced scan with AI scan and optimization
     const debouncedScan = debounce(async (text: string, input: HTMLElement) => {
       const results = detectPii(text);
+      console.log('dectected:', results)
       let aiDetections: any[] | null = null;
       if (autoAiScan && aiScanOptimizer.shouldScan(text)) {
         if (aiScanOptimizer.hasSignificantChange(lastScannedText, text)) {
@@ -562,6 +694,27 @@ export default defineContentScript({
       
       handleDetection(results, aiDetections);
     }, 800);
+
+    // Manual rescan function for context menu
+    const manualRescan = async () => {
+      if (!contextMenuInput) return;
+      
+      const currentValue = getInputValue(contextMenuInput);
+      const results = detectPii(currentValue);
+      console.log('Manual rescan - detected:', results);
+      
+      // Force AI scan regardless of cache
+      let aiDetections: any[] | null = null;
+      if (autoAiScan && shouldScanText(currentValue)) {
+        aiDetections = await performAiScan(contextMenuInput, currentValue);
+        lastScannedText = currentValue;
+      }
+      
+      handleDetection(results, aiDetections);
+      
+      // Focus the input after rescan
+      contextMenuInput.focus();
+    };
 
     const attachInputListener = (
       input: HTMLInputElement | HTMLTextAreaElement | HTMLElement
@@ -579,6 +732,24 @@ export default defineContentScript({
       }
     };
 
+    // Context menu setup
+    document.addEventListener('contextmenu', (event) => {
+      const target = event.target as HTMLElement;
+      
+      if (isValidInput(target)) {
+        contextMenuInput = target as HTMLInputElement | HTMLTextAreaElement;
+      } else {
+        contextMenuInput = null;
+      }
+    });
+
+    // Listen for context menu action from background script
+    browser.runtime.onMessage.addListener((message) => {
+      if (message.action === 'rescanForPii') {
+        manualRescan();
+      }
+    });
+
     document.addEventListener(
       'focusin',
       async event => {
@@ -586,11 +757,12 @@ export default defineContentScript({
 
         if (!isValidInput(target)) return;
 
-        removeBadge();
+        removeAllIndicators();
 
         activeInput = target as HTMLInputElement | HTMLTextAreaElement;
         const currentValue = getInputValue(activeInput);
         const results = detectPii(currentValue);
+        console.log('dectected:', results)
         let aiDetections: any[] | null = null;
         if (autoAiScan && aiScanOptimizer.shouldScan(currentValue)) {
           aiDetections = await performAiScan(activeInput, currentValue);
@@ -609,7 +781,7 @@ export default defineContentScript({
       event => {
         const relatedTarget = event.relatedTarget as Node;
 
-        if (badgeContainer?.contains(relatedTarget) || isPopupOpen) {
+        if ((badgeContainer?.contains(relatedTarget) || dotContainer?.contains(relatedTarget)) || isPopupOpen) {
           return;
         }
 
@@ -621,7 +793,7 @@ export default defineContentScript({
           }
 
           if (currentFocus !== activeInput) {
-            removeBadge();
+            removeAllIndicators();
             activeInput = null;
           }
         }, 100);
@@ -633,12 +805,15 @@ export default defineContentScript({
       if (
         isPopupOpen &&
         badgeContainer &&
-        !badgeContainer.contains(event.target as Node)
+        !badgeContainer.contains(event.target as Node) &&
+        dotContainer &&
+        !dotContainer.contains(event.target as Node)
       ) {
         isPopupOpen = false;
         if (badgeRoot) {
           const currentValue = getInputValue(activeInput!);
           const results = detectPii(currentValue);
+          console.log('dectected:', results)
           badgeRoot.render(
             <SimpleWarningBadge
               detections={results}
@@ -646,6 +821,7 @@ export default defineContentScript({
               onPopupStateChange={isOpen => {
                 isPopupOpen = isOpen;
               }}
+              variant="full"
             />
           );
         }
@@ -654,7 +830,7 @@ export default defineContentScript({
 
     // Flush detection queue before unload
     ctx.onInvalidated(() => {
-      removeBadge();
+      removeAllIndicators();
       aiScanOptimizer.clearCache();
       detectionQueue.flush();
     });

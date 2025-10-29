@@ -11,6 +11,7 @@ export default defineConfig({
     permissions: [
       'storage', // For storing user settings
       'activeTab', // Required for some interactions
+      'contextMenus'
     ],
     externally_connectable: {
       matches: [

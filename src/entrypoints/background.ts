@@ -92,10 +92,48 @@ if (
   });
 }
 
+// Context menu helper function
+function createContextMenu() {
+  try {
+    browser.contextMenus.create({
+      id: 'pasteproof-rescan',
+      title: 'Rescan for PII',
+      contexts: ['editable'],
+    });
+    console.log('[Paste Proof] Context menu created');
+  } catch (error) {
+    console.error('[Paste Proof] Failed to create context menu:', error);
+  }
+}
+
 export default defineBackground(() => {
   console.log('[Paste Proof] Service worker started.');
 
   browser.runtime.onInstalled.addListener(() => {
     console.log('[Paste Proof] Extension installed successfully!');
+    // Create context menu on install
+    createContextMenu();
+  });
+
+  // Recreate context menu on startup (for Firefox compatibility)
+  browser.runtime.onStartup.addListener(() => {
+    console.log('[Paste Proof] Extension started');
+    createContextMenu();
+  });
+
+  // Handle context menu clicks
+  browser.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === 'pasteproof-rescan' && tab?.id) {
+      console.log('[Paste Proof] Rescan requested for tab:', tab.id);
+      
+      // Send message to content script to trigger rescan
+      browser.tabs.sendMessage(tab.id, {
+        action: 'rescanForPii',
+      }).then(() => {
+        console.log('[Paste Proof] Rescan message sent successfully');
+      }).catch((error) => {
+        console.error('[Paste Proof] Failed to send rescan message:', error);
+      });
+    }
   });
 });
