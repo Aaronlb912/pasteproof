@@ -69,7 +69,6 @@ class DetectionQueue {
       
       try {
         await apiClient.logDetectionsBatch(batch);
-        console.log(`Logged ${batch.length} detections`);
       } catch (error) {
         console.warn('Failed to log detections batch:', error);
         // Don't re-queue on failure to avoid infinite loops
@@ -89,7 +88,6 @@ export default defineContentScript({
     let authToken = await storage.getItem<string>('local:authToken');
     const enabled = await storage.getItem<boolean>('local:enabled') ?? true;
     const autoAiScan = await storage.getItem<boolean>('local:autoAiScan') ?? true;
-    console.log('extension enabled:', enabled);
     if (!enabled) {
       console.log('Paste Proof is disabled');
       return;
@@ -106,12 +104,10 @@ export default defineContentScript({
       if (!isTrusted) return;
 
       if (event.data.type === 'PASTEPROOF_AUTH_SUCCESS') {
-        console.log('✅ Received auth from web page!', event.data);
         
         await storage.setItem('local:authToken', event.data.authToken);
         await storage.setItem('local:user', event.data.user);
         
-        console.log('✅ Auth saved to extension storage');
         authToken = event.data.authToken;
         
         initializeApiClient(event.data.authToken);
@@ -124,7 +120,6 @@ export default defineContentScript({
       await storage.setItem('local:authToken', token);
       await storage.setItem('local:user', user);
       
-      console.log('✅ Auth saved via custom event');
       authToken = token;
       initializeApiClient(token);
     });
@@ -149,7 +144,6 @@ export default defineContentScript({
           localStorage.removeItem('pasteproof_auth_token');
           localStorage.removeItem('pasteproof_user');
           
-          console.log('✅ Auth loaded from localStorage');
           authToken = token;
           initializeApiClient(token);
         }
@@ -261,67 +255,120 @@ export default defineContentScript({
       }
     };
 
-    const handleAnonymize = async (detections: DetectionResult[]) => {
-      if (!activeInput) return;
+  const handleAnonymize = async (detections: DetectionResult[]) => {
+    if (!activeInput) return;
 
-      let newValue = activeInput.value;
-      const sortedDetections = [...detections].sort(
-        (a, b) => b.value.length - a.value.length
-      );
+    const isContentEditable = activeInput.getAttribute('contenteditable') === 'true';
+    let newValue: string;
+    
+    if (isContentEditable) {
+      // Handle contenteditable elements
+      newValue = activeInput.textContent || '';
+    } else {
+      // Handle regular inputs and textareas
+      newValue = (activeInput as HTMLInputElement | HTMLTextAreaElement).value;
+    }
 
-      sortedDetections.forEach(d => {
-        const anonymized = anonymizeValue(d);
-        newValue = newValue.replace(d.value, anonymized);
-      });
+    // Sort detections by value length (longest first) to avoid partial replacements
+    const sortedDetections = [...detections].sort(
+      (a, b) => b.value.length - a.value.length
+    );
 
-      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype,
+    // Replace all detected values with anonymized versions
+    sortedDetections.forEach(d => {
+      const anonymized = anonymizeValue(d);
+      newValue = newValue.replace(d.value, anonymized);
+    });
+
+    // Set the new value based on element type
+    if (isContentEditable) {
+      // For contenteditable elements
+      activeInput.textContent = newValue;
+      
+      // Trigger input events for contenteditable
+      activeInput.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+      activeInput.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+    } else {
+      const input = activeInput as HTMLInputElement | HTMLTextAreaElement;
+      
+      // Try multiple approaches to ensure the value is set
+      // Approach 1: Use native setter
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        input.tagName === 'INPUT' 
+          ? window.HTMLInputElement.prototype 
+          : window.HTMLTextAreaElement.prototype,
         'value'
       )?.set;
 
-      const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype,
-        'value'
-      )?.set;
-
-      if (activeInput.tagName === 'INPUT' && nativeInputValueSetter) {
-        nativeInputValueSetter.call(activeInput, newValue);
-      } else if (activeInput.tagName === 'TEXTAREA' && nativeTextAreaValueSetter) {
-        nativeTextAreaValueSetter.call(activeInput, newValue);
+      if (nativeSetter) {
+        nativeSetter.call(input, newValue);
       } else {
-        activeInput.value = newValue;
+        // Approach 2: Direct assignment
+        input.value = newValue;
       }
 
-      // Dispatch input event but DON'T dispatch submit/change
-      activeInput.dispatchEvent(new InputEvent('input', { 
-        bubbles: true,
-        cancelable: true,
-        inputType: 'insertText'
-      }));
+      // Approach 3: Try setting via setAttribute as fallback
+      input.setAttribute('value', newValue);
 
-      // Log anonymizations
-      const domain = window.location.hostname;
-      sortedDetections.forEach(detection => {
-        detectionQueue.add({
-          type: detection.type,
-          domain,
-          action: 'anonymized',
-          metadata: {
-            originalLength: detection.value.length,
-            pattern: detection.patternName,
-          }
-        });
+      // Dispatch multiple events to ensure frameworks detect the change
+      const events = [
+        new Event('input', { bubbles: true, cancelable: true }),
+        new Event('change', { bubbles: true, cancelable: true }),
+        new InputEvent('input', { 
+          bubbles: true, 
+          cancelable: true, 
+          inputType: 'insertText',
+          data: newValue 
+        }),
+        new Event('blur', { bubbles: true }),
+        new Event('keyup', { bubbles: true }),
+      ];
+
+      events.forEach(event => {
+        try {
+          input.dispatchEvent(event);
+        } catch (e) {
+          console.warn('Failed to dispatch event:', event.type, e);
+        }
       });
 
-      const results = detectPii(newValue);
-      console.log('detected after anonymize:', results)
+      // Force a re-render by briefly removing and re-adding focus
+      setTimeout(() => {
+        input.blur();
+        setTimeout(() => {
+          input.focus();
+        }, 10);
+      }, 10);
+    }
+
+    // Log anonymizations
+    const domain = window.location.hostname;
+    sortedDetections.forEach(detection => {
+      detectionQueue.add({
+        type: detection.type,
+        domain,
+        action: 'anonymized',
+        metadata: {
+          originalLength: detection.value.length,
+          pattern: detection.patternName,
+        }
+      });
+    });
+
+    // Re-scan after a short delay to update the badge
+    setTimeout(async () => {
+      const currentValue = getInputValue(activeInput!);
+      const results = detectPii(currentValue);
+      
       // Re-scan with AI if auto-scan is enabled
       let aiDetections: any[] | null = null;
-      if (autoAiScan && aiScanOptimizer.shouldScan(newValue)) {
-        aiDetections = await performAiScan(activeInput, newValue);
+      if (autoAiScan && aiScanOptimizer.shouldScan(currentValue)) {
+        aiDetections = await performAiScan(activeInput!, currentValue);
       }
+      
       handleDetection(results, aiDetections);
-    };
+    }, 100);
+  };
 
     // Helper function to create cache key
     const getCacheKey = (text: string): string => {
@@ -358,7 +405,6 @@ export default defineContentScript({
           return null;
         }
 
-        console.log('Performing AI scan on input...');
         const result = await apiClient.analyzeContext(
           text,
           window.location.hostname
@@ -539,7 +585,7 @@ export default defineContentScript({
       aiDetections: any[] | null = null
     ) => {
       // Log pattern-based detections
-      if (detections.length > 0 && !badgeContainer) {
+      if (detections.length > 0 && !badgeContainer && !dotContainer) {
         const domain = window.location.hostname;
         detections.forEach(detection => {
           detectionQueue.add({
@@ -557,9 +603,12 @@ export default defineContentScript({
 
       const hasPatternDetections = detections.length > 0;
       const hasAiDetections = aiDetections && aiDetections.length > 0;
+      const hasAnyDetections = hasPatternDetections || hasAiDetections;
       
-      // Show full badge if pattern detections exist
-      if (hasPatternDetections && activeInput) {
+      if (!activeInput) return;
+      
+      // Show full badge if there are actual detections (pattern or AI)
+      if (hasAnyDetections) {
         removeDot(); // Remove dot if full badge is shown
         const currentText = getInputValue(activeInput);
 
@@ -594,10 +643,9 @@ export default defineContentScript({
             />
           );
         }
-      } 
-      // Show dot if only AI detections exist (no pattern detections)
-      else if (!hasPatternDetections && hasAiDetections && activeInput) {
-        removeBadge(); // Remove full badge if only showing dot
+      } else {
+        // No detections - show small dot indicator
+        removeBadge(); // Remove full badge if showing dot
         const currentText = getInputValue(activeInput);
 
         if (!dotContainer) {
@@ -615,6 +663,7 @@ export default defineContentScript({
               inputText={currentText}
               initialAiDetections={aiDetections || undefined}
               variant="dot"
+              alwaysShowDot={true}
             />
           );
         } else if (dotRoot) {
@@ -628,13 +677,10 @@ export default defineContentScript({
               inputText={currentText}
               initialAiDetections={aiDetections || undefined}
               variant="dot"
+              alwaysShowDot={true}
             />
           );
         }
-      } else {
-        // No detections at all
-        removeBadge();
-        removeDot();
       }
     };
 
@@ -681,7 +727,6 @@ export default defineContentScript({
     // Debounced scan with AI scan and optimization
     const debouncedScan = debounce(async (text: string, input: HTMLElement) => {
       const results = detectPii(text);
-      console.log('dectected:', results)
       let aiDetections: any[] | null = null;
       if (autoAiScan && aiScanOptimizer.shouldScan(text)) {
         if (aiScanOptimizer.hasSignificantChange(lastScannedText, text)) {
@@ -701,7 +746,6 @@ export default defineContentScript({
       
       const currentValue = getInputValue(contextMenuInput);
       const results = detectPii(currentValue);
-      console.log('Manual rescan - detected:', results);
       
       // Force AI scan regardless of cache
       let aiDetections: any[] | null = null;
@@ -762,7 +806,6 @@ export default defineContentScript({
         activeInput = target as HTMLInputElement | HTMLTextAreaElement;
         const currentValue = getInputValue(activeInput);
         const results = detectPii(currentValue);
-        console.log('dectected:', results)
         let aiDetections: any[] | null = null;
         if (autoAiScan && aiScanOptimizer.shouldScan(currentValue)) {
           aiDetections = await performAiScan(activeInput, currentValue);
@@ -813,7 +856,6 @@ export default defineContentScript({
         if (badgeRoot) {
           const currentValue = getInputValue(activeInput!);
           const results = detectPii(currentValue);
-          console.log('dectected:', results)
           badgeRoot.render(
             <SimpleWarningBadge
               detections={results}
@@ -848,11 +890,9 @@ export default defineContentScript({
         
         try {
           const patterns = await apiClient.getPatterns();
-          console.log('Loaded custom patterns:', patterns);
           
           if (patterns && patterns.length > 0) {
             setCustomPatterns(patterns);
-            console.log(`✅ ${patterns.length} custom patterns loaded`);
           } else {
             console.log('No custom patterns found');
           }
@@ -868,7 +908,6 @@ export default defineContentScript({
     browser.storage.onChanged.addListener((changes, area) => {
       if (area === 'local') {
         if (changes.authToken) {
-          console.log('API key changed - reloading patterns');
           const newToken = changes.authToken.newValue;
           if (newToken) {
             authToken = newToken;
