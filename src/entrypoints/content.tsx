@@ -764,6 +764,7 @@ export default defineContentScript({
               inputText={currentText}
               initialAiDetections={aiDetections || undefined}
               variant="full"
+              autoAiEnabled={autoAiScan}
             />
           );
         } else if (badgeRoot) {
@@ -777,6 +778,7 @@ export default defineContentScript({
               inputText={currentText}
               initialAiDetections={aiDetections || undefined}
               variant="full"
+              autoAiEnabled={autoAiScan}
             />
           );
         }
@@ -801,6 +803,7 @@ export default defineContentScript({
               initialAiDetections={aiDetections || undefined}
               variant="dot"
               alwaysShowDot={true}
+              autoAiEnabled={autoAiScan}
             />
           );
         } else if (dotRoot) {
@@ -815,6 +818,7 @@ export default defineContentScript({
               initialAiDetections={aiDetections || undefined}
               variant="dot"
               alwaysShowDot={true}
+              autoAiEnabled={autoAiScan}
             />
           );
         }
@@ -907,6 +911,20 @@ export default defineContentScript({
       };
 
       input.addEventListener('input', handler);
+      input.addEventListener('paste', () => {
+        // Wait for pasted content to be inserted, then trigger immediate scan
+        setTimeout(async () => {
+          if (activeInput !== input) return;
+          const currentValue = getInputValue(input);
+          const results = detectPii(currentValue);
+          let aiDetections: any[] | null = null;
+          if (autoAiScan && aiScanOptimizer.shouldScan(currentValue)) {
+            aiDetections = await performAiScan(input, currentValue);
+            lastScannedText = currentValue;
+          }
+          handleDetection(results, aiDetections);
+        }, 0);
+      });
 
       if (input.getAttribute('contenteditable') === 'true') {
         input.addEventListener('keyup', handler);
@@ -1005,6 +1023,7 @@ export default defineContentScript({
                 isPopupOpen = isOpen;
               }}
               variant="full"
+              autoAiEnabled={autoAiScan}
             />
           );
         }

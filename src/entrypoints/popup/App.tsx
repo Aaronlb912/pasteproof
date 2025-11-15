@@ -27,7 +27,7 @@ export default function PopupApp() {
   const [state, setState] = useState<PopupState>({
     isAuthenticated: false,
     enabled: true,
-    autoAiScan: false,
+    autoAiScan: true,
     currentDomain: '',
     isWhitelisted: false,
     hasApiKey: false,
@@ -93,12 +93,21 @@ export default function PopupApp() {
       const domain = url.hostname;
 
       const enabled = (await storage.getItem<boolean>('local:enabled')) ?? true;
-      const autoAiScan =
-        (await storage.getItem<boolean>('local:autoAiScan')) ?? false;
+      const storedAutoAiScan =
+        (await storage.getItem<boolean>('local:autoAiScan')) ?? null;
       const authToken = await storage.getItem<string>('local:authToken');
       const user = await storage.getItem<any>('local:user');
 
       let isAuthenticated = !!(authToken && user);
+      const isPremiumUser =
+        user?.subscription_tier === 'premium' ||
+        user?.subscription_status === 'active';
+
+      let autoAiScan = storedAutoAiScan ?? true;
+      if (isPremiumUser && !autoAiScan) {
+        autoAiScan = true;
+        await storage.setItem('local:autoAiScan', true);
+      }
 
       if (!isAuthenticated) {
         try {

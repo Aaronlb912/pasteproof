@@ -11,6 +11,7 @@ export function SimpleWarningBadge({
   initialAiDetections,
   variant = 'full',
   alwaysShowDot = false,
+  autoAiEnabled = true,
 }: {
   detections: DetectionResult[];
   onAnonymize: (detections: DetectionResult[]) => void;
@@ -19,6 +20,7 @@ export function SimpleWarningBadge({
   initialAiDetections?: AiDetection[];
   variant?: 'full' | 'dot';
   alwaysShowDot?: boolean;
+  autoAiEnabled?: boolean;
 }) {
   const [showPopup, setShowPopup] = useState(false);
   const [aiDetections, setAiDetections] = useState<AiDetection[] | null>(
@@ -426,7 +428,9 @@ export function SimpleWarningBadge({
                         marginTop: '8px',
                       }}
                     >
-                      Premium feature
+                      {autoAiEnabled
+                        ? 'Premium feature - deeper analysis'
+                        : 'Auto AI scan is off. Tap “Run AI Scan”.'}
                     </p>
                   </div>
                 )}

@@ -7,19 +7,19 @@ export default defineConfig({
     name: 'PasteProof',
     description:
       'Your pasteboard bodyguard. Prevents you from pasting sensitive data into the wrong fields.',
-    version: '0.1.3',
+    version: '0.1.5',
     permissions: [
       'storage', // For storing user settings
       'activeTab', // Required for some interactions
-      'contextMenus'
+      'contextMenus',
     ],
     externally_connectable: {
       matches: [
-        "https://pasteproof.com/*",
-        "https://*.pasteproof.com/*",
-        "http://localhost:*/*",
-        "https://*.vercel.app/*"
-      ]
+        'https://pasteproof.com/*',
+        'https://*.pasteproof.com/*',
+        'http://localhost:*/*',
+        'https://*.vercel.app/*',
+      ],
     },
     host_permissions: [
       '<all_urls>', // Allows content scripts to run on all websites

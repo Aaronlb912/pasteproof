@@ -14,7 +14,7 @@ export default function OptionsApp() {
   const [success, setSuccess] = useState('');
   const [whitelist, setWhitelist] = useState<WhitelistSite[]>([]);
   const [newDomain, setNewDomain] = useState('');
-  const [autoAiScan, setAutoAiScan] = useState(false);
+  const [autoAiScan, setAutoAiScan] = useState(true);
   const [extensionEnabled, setExtensionEnabled] = useState(true);
   const [userEmail, setUserEmail] = useState('');
 
@@ -67,7 +67,8 @@ export default function OptionsApp() {
 
   const loadSettings = async () => {
     const token = await storage.getItem<string>('local:authToken');
-    const autoAiScan = await storage.getItem<boolean>('local:autoAiScan') ?? false;
+    const autoAiScan =
+      (await storage.getItem<boolean>('local:autoAiScan')) ?? true;
     const enabled = await storage.getItem<boolean>('local:enabled') ?? true;
     const user = await storage.getItem<any>('local:user');
 
