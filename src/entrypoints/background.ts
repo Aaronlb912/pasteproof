@@ -1,6 +1,6 @@
 /*global chrome*/
 
-import { getApiClient } from "@/shared/api-client";
+import { getApiClient } from '@/shared/api-client';
 
 // entrypoints/background.ts
 interface QueuedDetection {
@@ -47,7 +47,7 @@ class DetectionQueue {
       // Process in batches
       while (this.queue.length > 0) {
         const batch = this.queue.splice(0, this.BATCH_SIZE);
-        
+
         try {
           await apiClient.logDetectionsBatch(batch);
         } catch (error) {
@@ -81,11 +81,7 @@ setInterval(() => {
 }, 30000); // Every 30 seconds
 
 // Flush on browser events
-if (
-  typeof chrome !== 'undefined' &&
-  chrome.runtime &&
-  chrome.runtime.id
-) {
+if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) {
   chrome.runtime.onSuspend.addListener(() => {
     detectionQueue.flush();
   });
@@ -105,7 +101,6 @@ function createContextMenu() {
 }
 
 export default defineBackground(() => {
-
   browser.runtime.onInstalled.addListener(() => {
     // Create context menu on install
     createContextMenu();
@@ -119,16 +114,17 @@ export default defineBackground(() => {
   // Handle context menu clicks
   browser.contextMenus.onClicked.addListener((info, tab) => {
     if (info.menuItemId === 'pasteproof-rescan' && tab?.id) {
-      console.log('[Paste Proof] Rescan requested for tab:', tab.id);
-      
       // Send message to content script to trigger rescan
-      browser.tabs.sendMessage(tab.id, {
-        action: 'rescanForPii',
-      }).then(() => {
-        console.log('[Paste Proof] Rescan message sent successfully');
-      }).catch((error) => {
-        console.error('[Paste Proof] Failed to send rescan message:', error);
-      });
+      browser.tabs
+        .sendMessage(tab.id, {
+          action: 'rescanForPii',
+        })
+        .then(() => {
+          console.log('[Paste Proof] Rescan message sent successfully');
+        })
+        .catch(error => {
+          console.error('[Paste Proof] Failed to send rescan message:', error);
+        });
     }
   });
 });
