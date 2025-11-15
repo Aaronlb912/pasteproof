@@ -138,7 +138,7 @@ export default function PopupApp() {
       if (isAuthenticated) {
         try {
           const response = await fetch(
-            `${import.meta.env.VITE_API_URL}/api/whitelist/check/${domain}`,
+            `${import.meta.env.VITE_API_URL}/v1/whitelist/check/${domain}`,
             {
               headers: {
                 'X-API-Key': authToken,
@@ -259,7 +259,7 @@ export default function PopupApp() {
 
       if (state.isWhitelisted) {
         const response = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/whitelist`,
+          `${import.meta.env.VITE_API_URL}/v1/whitelist`,
           {
             headers: {
               'X-API-Key': authToken as string,
@@ -273,7 +273,7 @@ export default function PopupApp() {
 
         if (entry) {
           await fetch(
-            `${import.meta.env.VITE_API_URL}/api/whitelist/${entry.id}`,
+            `${import.meta.env.VITE_API_URL}/v1/whitelist/${entry.id}`,
             {
               method: 'DELETE',
               headers: {
@@ -283,7 +283,7 @@ export default function PopupApp() {
           );
         }
       } else {
-        await fetch(`${import.meta.env.VITE_API_URL}/api/whitelist`, {
+        await fetch(`${import.meta.env.VITE_API_URL}/v1/whitelist`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

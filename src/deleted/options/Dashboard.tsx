@@ -43,7 +43,7 @@ export default function Dashboard() {
       }
 
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/analytics?range=${timeRange}`,
+        `${import.meta.env.VITE_API_URL}/v1/analytics?range=${timeRange}`,
         {
           headers: {
             'Content-Type': 'application/json',

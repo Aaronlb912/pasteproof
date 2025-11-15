@@ -169,7 +169,7 @@ export default defineContentScript({
       const currentDomain = window.location.hostname;
       try {
         const response = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/whitelist/check/${currentDomain}`,
+          `${import.meta.env.VITE_API_URL}/v1/whitelist/check/${currentDomain}`,
           {
             headers: {
               'X-API-Key': authToken,

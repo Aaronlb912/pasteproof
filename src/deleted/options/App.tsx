@@ -67,7 +67,6 @@ export default function OptionsApp() {
 
   const loadSettings = async () => {
     const token = await storage.getItem<string>('local:authToken');
-    console.log('token', token)
     const autoAiScan = await storage.getItem<boolean>('local:autoAiScan') ?? false;
     const enabled = await storage.getItem<boolean>('local:enabled') ?? true;
     const user = await storage.getItem<any>('local:user');

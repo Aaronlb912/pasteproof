@@ -50,7 +50,6 @@ class DetectionQueue {
         
         try {
           await apiClient.logDetectionsBatch(batch);
-          console.log(`Logged ${batch.length} detections`);
         } catch (error) {
           console.error('Failed to log batch, re-queueing:', error);
           // Put failed batch back at the front
@@ -100,24 +99,20 @@ function createContextMenu() {
       title: 'Rescan for PII',
       contexts: ['editable'],
     });
-    console.log('[Paste Proof] Context menu created');
   } catch (error) {
     console.error('[Paste Proof] Failed to create context menu:', error);
   }
 }
 
 export default defineBackground(() => {
-  console.log('[Paste Proof] Service worker started.');
 
   browser.runtime.onInstalled.addListener(() => {
-    console.log('[Paste Proof] Extension installed successfully!');
     // Create context menu on install
     createContextMenu();
   });
 
   // Recreate context menu on startup (for Firefox compatibility)
   browser.runtime.onStartup.addListener(() => {
-    console.log('[Paste Proof] Extension started');
     createContextMenu();
   });
 

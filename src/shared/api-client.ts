@@ -1,7 +1,7 @@
 // src/shared/api-client.ts
 import { CustomPattern } from './pii-detector';
 
-const API_BASE_URL = 'https://pasteproof-backend.jedgar.workers.dev'; // Change to production URL later
+const API_BASE_URL = 'https://api.pasteproof.com'; // Production API base URL
 
 export type ApiConfig = {
   apiKey: string;
@@ -107,7 +107,7 @@ export class PasteProofApiClient {
   // Whitelist methods
   async getWhitelist(): Promise<WhitelistSite[]> {
     const data = await this.fetch<{ whitelist: WhitelistSite[] }>(
-      '/api/whitelist'
+      '/v1/whitelist'
     );
     return data.whitelist;
   }
@@ -116,7 +116,7 @@ export class PasteProofApiClient {
     const data = await this.fetch<{
       success: boolean;
       whitelist: WhitelistSite;
-    }>('/api/whitelist', {
+    }>('/v1/whitelist', {
       method: 'POST',
       body: JSON.stringify({ domain }),
     });
@@ -124,14 +124,14 @@ export class PasteProofApiClient {
   }
 
   async removeFromWhitelist(whitelistId: string): Promise<void> {
-    await this.fetch(`/api/whitelist/${whitelistId}`, {
+    await this.fetch(`/v1/whitelist/${whitelistId}`, {
       method: 'DELETE',
     });
   }
 
   async isWhitelisted(domain: string): Promise<boolean> {
     const data = await this.fetch<{ whitelisted: boolean; domain: string }>(
-      `/api/whitelist/check/${encodeURIComponent(domain)}`
+      `/v1/whitelist/check/${encodeURIComponent(domain)}`
     );
     return data.whitelisted;
   }
@@ -149,7 +149,7 @@ export class PasteProofApiClient {
         model: string;
         provider: string;
       };
-    }>('/api/analyze-context', {
+    }>('/v1/analyze-context', {
       method: 'POST',
       body: JSON.stringify({ text, context }),
     });
@@ -170,7 +170,7 @@ export class PasteProofApiClient {
     if (params?.limit) queryParams.set('limit', params.limit.toString());
 
     const data = await this.fetch<{ logs: AuditLog[] }>(
-      `/api/logs?${queryParams.toString()}`
+      `/v1/logs?${queryParams.toString()}`
     );
     return data.logs;
   }
@@ -178,7 +178,7 @@ export class PasteProofApiClient {
   // Get statistics for dashboard
   async getStats(days: number = 7): Promise<DashboardStats> {
     const data = await this.fetch<{ stats: DashboardStats }>(
-      `/api/stats?days=${days}`
+      `/v1/stats?days=${days}`
     );
     return data.stats;
   }
@@ -186,7 +186,7 @@ export class PasteProofApiClient {
   // Fetch all custom patterns
   async getPatterns(): Promise<CustomPattern[]> {
     const data = await this.fetch<{ patterns: CustomPattern[] }>(
-      '/api/patterns'
+      '/v1/patterns'
     );
     return data.patterns;
   }
@@ -199,7 +199,7 @@ export class PasteProofApiClient {
     description?: string;
   }): Promise<CustomPattern> {
     const data = await this.fetch<{ success: boolean; pattern: CustomPattern }>(
-      '/api/patterns',
+      '/v1/patterns',
       {
         method: 'POST',
         body: JSON.stringify(pattern),
@@ -213,7 +213,7 @@ export class PasteProofApiClient {
     patternId: string,
     updates: Partial<CustomPattern>
   ): Promise<void> {
-    await this.fetch(`/api/patterns/${patternId}`, {
+    await this.fetch(`/v1/patterns/${patternId}`, {
       method: 'PUT',
       body: JSON.stringify(updates),
     });
@@ -221,7 +221,7 @@ export class PasteProofApiClient {
 
   // Delete a pattern
   async deletePattern(patternId: string): Promise<void> {
-    await this.fetch(`/api/patterns/${patternId}`, {
+    await this.fetch(`/v1/patterns/${patternId}`, {
       method: 'DELETE',
     });
   }
@@ -235,7 +235,7 @@ export class PasteProofApiClient {
     metadata?: Record<string, any>;
   }): Promise<void> {
     try {
-      await this.fetch('/api/log', {
+      await this.fetch('/v1/log', {
         method: 'POST',
         body: JSON.stringify(event),
       });
@@ -252,7 +252,7 @@ export class PasteProofApiClient {
     subscription_tier: string;
     subscription_status: string;
   }> {
-    return this.fetch('/api/user');
+    return this.fetch('/v1/user');
   }
 
   async logDetection(detection: {
@@ -263,7 +263,7 @@ export class PasteProofApiClient {
     team_id?: string | null;
   }): Promise<void> {
     try {
-      await this.fetch('/api/detections', {
+      await this.fetch('/v1/detections', {
         method: 'POST',
         body: JSON.stringify(detection),
       });
@@ -282,7 +282,7 @@ export class PasteProofApiClient {
     }>
   ): Promise<void> {
     try {
-      await this.fetch('/api/detections/batch', {
+      await this.fetch('/v1/detections/batch', {
         method: 'POST',
         body: JSON.stringify({ detections }),
       });
@@ -294,7 +294,7 @@ export class PasteProofApiClient {
   // Team methods
   async getTeams(): Promise<Team[]> {
     try {
-      const data = await this.fetch<{ teams: Team[] }>('/api/teams');
+      const data = await this.fetch<{ teams: Team[] }>('/v1/teams');
       return data.teams;
     } catch (error) {
       console.warn('Failed to fetch teams:', error);
@@ -306,7 +306,7 @@ export class PasteProofApiClient {
   async getTeamPolicies(teamId: string): Promise<TeamPolicy[]> {
     try {
       const data = await this.fetch<{ policies: TeamPolicy[] }>(
-        `/api/teams/${teamId}/policies`
+        `/v1/teams/${teamId}/policies`
       );
       return data.policies;
     } catch (error) {
