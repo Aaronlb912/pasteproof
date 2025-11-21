@@ -6,6 +6,15 @@ import {
   initializeApiClient,
   type Team,
 } from '@/shared/api-client';
+import LockIcon from '@mui/icons-material/Lock';
+import DashboardIcon from '@mui/icons-material/Dashboard';
+import LogoutIcon from '@mui/icons-material/Logout';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import PauseIcon from '@mui/icons-material/Pause';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CancelIcon from '@mui/icons-material/Cancel';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
+import SecurityIcon from '@mui/icons-material/Security';
 
 type User = {
   id: string;
@@ -330,8 +339,8 @@ export default function PopupApp() {
         <img
           alt="pasteproof icon"
           src={pasteproofIcon}
-          width={35}
-          height={35}
+          width={28}
+          height={28}
         />
         <div>
           <div style={styles.title}>PasteProof</div>
@@ -340,14 +349,31 @@ export default function PopupApp() {
       </div>
 
       {!state.isAuthenticated && (
-        <div style={{ textAlign: 'center', padding: '20px' }}>
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔒</div>
-          <p style={{ color: '#666', marginBottom: '16px' }}>
+        <div style={styles.authContainer}>
+          <div style={styles.authIcon}>
+            <LockIcon sx={{ fontSize: 36, color: '#ff9800' }} />
+          </div>
+          <p style={styles.authText}>
             Sign in to unlock Premium features
           </p>
           <button
             onClick={signIn}
-            style={{ ...styles.button, ...styles.buttonPrimary }}
+            style={{
+              ...styles.button,
+              ...styles.buttonPrimary,
+              width: 'auto',
+              minWidth: '120px',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.backgroundColor = '#fb8c00';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+              e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.backgroundColor = '#ff9800';
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 1px 2px 0 rgba(0, 0, 0, 0.05)';
+            }}
           >
             Sign In
           </button>
@@ -359,19 +385,20 @@ export default function PopupApp() {
           <div
             style={{
               ...styles.statusBadge,
-              backgroundColor: state.enabled ? '#e8f5e9' : '#ffebee',
+              backgroundColor: state.enabled ? '#ecfdf5' : '#fef2f2',
             }}
           >
-            <div
-              style={{
-                ...styles.statusDot,
-                backgroundColor: state.enabled ? '#4caf50' : '#f44336',
+            <SecurityIcon
+              sx={{
+                fontSize: 16,
+                color: state.enabled ? '#10b981' : '#ef4444',
               }}
             />
             <span
               style={{
-                color: state.enabled ? '#2e7d32' : '#c62828',
+                color: state.enabled ? '#065f46' : '#991b1b',
                 fontWeight: '600',
+                fontSize: '13px',
               }}
             >
               {state.enabled ? 'Protection Active' : 'Protection Disabled'}
@@ -391,6 +418,24 @@ export default function PopupApp() {
                 value={currentTeamId || ''}
                 onChange={e => handleTeamChange(e.target.value || null)}
                 style={styles.select}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = '#d1d5db';
+                  e.currentTarget.style.backgroundColor = '#ffffff';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = '#e5e7eb';
+                  e.currentTarget.style.backgroundColor = '#f9fafb';
+                }}
+                onFocus={e => {
+                  e.currentTarget.style.borderColor = '#ff9800';
+                  e.currentTarget.style.backgroundColor = '#ffffff';
+                  e.currentTarget.style.boxShadow = '0 0 0 3px rgba(255, 152, 0, 0.1)';
+                }}
+                onBlur={e => {
+                  e.currentTarget.style.borderColor = '#e5e7eb';
+                  e.currentTarget.style.backgroundColor = '#f9fafb';
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
               >
                 <option value="">Personal Account</option>
                 {teams.map(team => (
@@ -406,8 +451,42 @@ export default function PopupApp() {
             <button
               onClick={toggleEnabled}
               style={{ ...styles.button, ...styles.buttonPrimary }}
+              onMouseEnter={e => {
+                e.currentTarget.style.backgroundColor = '#fb8c00';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.backgroundColor = '#ff9800';
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 1px 2px 0 rgba(0, 0, 0, 0.05)';
+              }}
             >
-              {state.enabled ? '⏸️ Disable' : '▶️ Enable'} Protection
+              {state.enabled ? (
+                <>
+                  <PauseIcon
+                    sx={{
+                      fontSize: 14,
+                      marginRight: '5px',
+                      verticalAlign: 'middle',
+                      lineHeight: 1,
+                    }}
+                  />
+                  Disable Protection
+                </>
+              ) : (
+                <>
+                  <PlayArrowIcon
+                    sx={{
+                      fontSize: 14,
+                      marginRight: '5px',
+                      verticalAlign: 'middle',
+                      lineHeight: 1,
+                    }}
+                  />
+                  Enable Protection
+                </>
+              )}
             </button>
 
             <button
@@ -418,8 +497,50 @@ export default function PopupApp() {
                   ? styles.buttonDanger
                   : styles.buttonSecondary),
               }}
+              onMouseEnter={e => {
+                if (state.isWhitelisted) {
+                  e.currentTarget.style.backgroundColor = '#dc2626';
+                } else {
+                  e.currentTarget.style.backgroundColor = '#059669';
+                }
+                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
+              }}
+              onMouseLeave={e => {
+                if (state.isWhitelisted) {
+                  e.currentTarget.style.backgroundColor = '#ef4444';
+                } else {
+                  e.currentTarget.style.backgroundColor = '#10b981';
+                }
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 1px 2px 0 rgba(0, 0, 0, 0.05)';
+              }}
             >
-              {state.isWhitelisted ? '✗ Remove from' : '✓ Add to'} Whitelist
+              {state.isWhitelisted ? (
+                <>
+                  <CancelIcon
+                    sx={{
+                      fontSize: 14,
+                      marginRight: '5px',
+                      verticalAlign: 'middle',
+                      lineHeight: 1,
+                    }}
+                  />
+                  Remove from Whitelist
+                </>
+              ) : (
+                <>
+                  <CheckCircleIcon
+                    sx={{
+                      fontSize: 14,
+                      marginRight: '5px',
+                      verticalAlign: 'middle',
+                      lineHeight: 1,
+                    }}
+                  />
+                  Add to Whitelist
+                </>
+              )}
             </button>
           </div>
 
@@ -439,25 +560,32 @@ export default function PopupApp() {
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
-                    marginBottom: '4px',
+                    gap: '4px',
+                    marginBottom: '3px',
                   }}
                 >
+                  <SmartToyIcon
+                    sx={{
+                      fontSize: 14,
+                      color: '#9c27b0',
+                      marginRight: '3px',
+                    }}
+                  />
                   <span
                     style={{
-                      fontSize: '14px',
+                      fontSize: '13px',
                       fontWeight: '600',
                       color: '#333',
                     }}
                   >
-                    🤖 Auto AI Scan
+                    Auto AI Scan
                   </span>
                   <span
                     style={{
-                      fontSize: '9px',
+                      fontSize: '8px',
                       backgroundColor: '#9c27b0',
                       color: 'white',
-                      padding: '2px 5px',
+                      padding: '1px 4px',
                       borderRadius: '3px',
                       fontWeight: '600',
                     }}
@@ -465,7 +593,7 @@ export default function PopupApp() {
                     PREMIUM
                   </span>
                 </div>
-                <div style={{ fontSize: '11px', color: '#666' }}>
+                <div style={{ fontSize: '10px', color: '#666' }}>
                   Automatically scan inputs with AI
                 </div>
               </div>
@@ -497,11 +625,35 @@ export default function PopupApp() {
           <div style={styles.divider} />
 
           <div style={styles.links}>
-            <button onClick={openDashboard} style={styles.link}>
-              📊 Dashboard
+            <button
+              onClick={openDashboard}
+              style={styles.link}
+              onMouseEnter={e => {
+                e.currentTarget.style.backgroundColor = '#f9fafb';
+                e.currentTarget.style.borderColor = '#d1d5db';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.backgroundColor = 'white';
+                e.currentTarget.style.borderColor = '#e5e7eb';
+              }}
+            >
+              <DashboardIcon sx={{ fontSize: 14, marginRight: '5px' }} />
+              Dashboard
             </button>
-            <button onClick={signOut} style={styles.link}>
-              🚪 Sign Out
+            <button
+              onClick={signOut}
+              style={styles.link}
+              onMouseEnter={e => {
+                e.currentTarget.style.backgroundColor = '#f9fafb';
+                e.currentTarget.style.borderColor = '#d1d5db';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.backgroundColor = 'white';
+                e.currentTarget.style.borderColor = '#e5e7eb';
+              }}
+            >
+              <LogoutIcon sx={{ fontSize: 14, marginRight: '5px' }} />
+              Sign Out
             </button>
           </div>
         </>
@@ -512,21 +664,26 @@ export default function PopupApp() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    width: '320px',
-    padding: '16px',
-    fontFamily: 'system-ui, -apple-system, sans-serif',
-    backgroundColor: '#fafafa',
+    width: '360px',
+    padding: '12px',
+    fontFamily:
+      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    backgroundColor: '#ffffff',
+    minHeight: '240px',
   },
   loading: {
     textAlign: 'center',
-    padding: '20px',
-    color: '#666',
+    padding: '24px 12px',
+    color: '#6b7280',
+    fontSize: '14px',
   },
   header: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
-    marginBottom: '16px',
+    gap: '8px',
+    marginBottom: '14px',
+    paddingBottom: '10px',
+    borderBottom: '1px solid #e5e7eb',
   },
   headerIcon: {
     fontSize: '36px',
@@ -534,98 +691,120 @@ const styles: Record<string, React.CSSProperties> = {
   title: {
     fontSize: '18px',
     fontWeight: '700',
-    color: '#333',
+    color: '#111827',
+    letterSpacing: '-0.02em',
   },
   subtitle: {
     fontSize: '11px',
-    color: '#666',
+    color: '#6b7280',
+    fontWeight: '400',
   },
   statusBadge: {
-    padding: '12px',
-    borderRadius: '8px',
-    marginBottom: '16px',
+    padding: '8px 10px',
+    borderRadius: '6px',
+    marginBottom: '12px',
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
-  },
-  statusDot: {
-    width: '8px',
-    height: '8px',
-    borderRadius: '50%',
+    boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
   },
   section: {
-    marginBottom: '16px',
+    marginBottom: '12px',
   },
   sectionLabel: {
-    fontSize: '11px',
+    fontSize: '10px',
     textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-    color: '#666',
-    marginBottom: '4px',
+    letterSpacing: '0.05em',
+    color: '#6b7280',
+    marginBottom: '5px',
     fontWeight: '600',
   },
   domain: {
-    fontSize: '14px',
-    color: '#333',
+    fontSize: '13px',
+    color: '#111827',
     fontWeight: '500',
-    backgroundColor: 'white',
-    padding: '8px 12px',
-    borderRadius: '4px',
-    border: '1px solid #ddd',
+    backgroundColor: '#f9fafb',
+    padding: '6px 10px',
+    borderRadius: '6px',
+    border: '1px solid #e5e7eb',
+    fontFamily: 'monospace',
   },
   controls: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '8px',
-    marginBottom: '16px',
+    gap: '6px',
+    marginBottom: '12px',
   },
   button: {
-    padding: '10px 16px',
+    padding: '8px 12px',
     border: 'none',
     borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '14px',
+    fontSize: '13px',
     fontWeight: '600',
-    transition: 'all 0.2s',
+    transition: 'all 0.2s ease',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
   },
   buttonPrimary: {
     backgroundColor: '#ff9800',
     color: 'white',
   },
+  buttonPrimaryHover: {
+    backgroundColor: '#fb8c00',
+    transform: 'translateY(-1px)',
+    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+  },
   buttonSecondary: {
-    backgroundColor: '#4caf50',
+    backgroundColor: '#10b981',
     color: 'white',
   },
+  buttonSecondaryHover: {
+    backgroundColor: '#059669',
+  },
   buttonDanger: {
-    backgroundColor: '#f44336',
+    backgroundColor: '#ef4444',
     color: 'white',
+  },
+  buttonDangerHover: {
+    backgroundColor: '#dc2626',
   },
   divider: {
     height: '1px',
-    backgroundColor: '#ddd',
-    marginBottom: '16px',
+    backgroundColor: '#e5e7eb',
+    marginBottom: '12px',
+    marginTop: '2px',
   },
   links: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
-    gap: '8px',
+    gap: '6px',
   },
   link: {
-    padding: '8px',
-    border: '1px solid #ddd',
-    borderRadius: '4px',
+    padding: '6px 8px',
+    border: '1px solid #e5e7eb',
+    borderRadius: '6px',
     backgroundColor: 'white',
     cursor: 'pointer',
-    fontSize: '13px',
+    fontSize: '12px',
     fontWeight: '500',
-    color: '#333',
-    transition: 'all 0.2s',
+    color: '#374151',
+    transition: 'all 0.2s ease',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  linkHover: {
+    backgroundColor: '#f9fafb',
+    borderColor: '#d1d5db',
   },
   toggle: {
     position: 'relative',
     display: 'inline-block',
-    width: '44px',
-    height: '24px',
+    width: '48px',
+    height: '26px',
   },
   toggleSlider: {
     position: 'absolute',
@@ -634,29 +813,51 @@ const styles: Record<string, React.CSSProperties> = {
     left: 0,
     right: 0,
     bottom: 0,
-    transition: '0.4s',
-    borderRadius: '24px',
+    transition: '0.3s ease',
+    borderRadius: '26px',
   },
   toggleButton: {
     position: 'absolute',
     content: '',
-    height: '18px',
-    width: '18px',
+    height: '20px',
+    width: '20px',
     bottom: '3px',
     backgroundColor: 'white',
-    transition: '0.4s',
+    transition: '0.3s ease',
     borderRadius: '50%',
+    boxShadow: '0 2px 4px 0 rgba(0, 0, 0, 0.2)',
   },
   select: {
     width: '100%',
-    padding: '8px 12px',
-    fontSize: '14px',
-    color: '#333',
+    padding: '6px 10px',
+    fontSize: '13px',
+    color: '#111827',
     fontWeight: '500',
-    backgroundColor: 'white',
-    border: '1px solid #ddd',
-    borderRadius: '4px',
+    backgroundColor: '#f9fafb',
+    border: '1px solid #e5e7eb',
+    borderRadius: '6px',
     cursor: 'pointer',
-    fontFamily: 'system-ui, -apple-system, sans-serif',
+    fontFamily:
+      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    transition: 'all 0.2s ease',
+    outline: 'none',
+  },
+  authContainer: {
+    textAlign: 'center',
+    padding: '20px 12px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+  },
+  authIcon: {
+    marginBottom: '10px',
+    display: 'flex',
+    justifyContent: 'center',
+  },
+  authText: {
+    color: '#6b7280',
+    marginBottom: '12px',
+    fontSize: '13px',
+    lineHeight: '1.4',
   },
 };
