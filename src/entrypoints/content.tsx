@@ -157,11 +157,14 @@ export default defineContentScript({
       const currentDomain = window.location.hostname;
       try {
         const response = await fetch(
-          `${import.meta.env.VITE_API_URL}/v1/whitelist/check/${currentDomain}`,
+          `${import.meta.env.VITE_API_URL}/v1/whitelist/check`,
           {
+            method: 'POST',
             headers: {
               'X-API-Key': authToken,
+              'Content-Type': 'application/json',
             },
+            body: JSON.stringify({ domain: currentDomain }),
           }
         );
         const data = await response.json();
@@ -365,6 +368,78 @@ export default defineContentScript({
       }
 
       return expectedTypes;
+    };
+
+    // Map expected input types to API fieldType
+    const getFieldType = (
+      element: HTMLInputElement | HTMLTextAreaElement | HTMLElement,
+      expectedTypes: Set<string>
+    ): 'name' | 'email' | 'address' | 'phone' | 'freeform' | 'unknown' => {
+      // Priority order: email > phone > name > address > freeform > unknown
+      if (expectedTypes.has('EMAIL')) {
+        return 'email';
+      }
+      if (expectedTypes.has('PHONE')) {
+        return 'phone';
+      }
+
+      // Check for name patterns in attributes
+      const attrs = {
+        id: element.id?.toLowerCase() || '',
+        name: (element as HTMLInputElement).name?.toLowerCase() || '',
+        placeholder:
+          (element as HTMLInputElement).placeholder?.toLowerCase() || '',
+        autocomplete: element.getAttribute('autocomplete')?.toLowerCase() || '',
+        ariaLabel: element.getAttribute('aria-label')?.toLowerCase() || '',
+        title: element.getAttribute('title')?.toLowerCase() || '',
+      };
+
+      // Check for associated label
+      let labelText = '';
+      if (element.id) {
+        const label = document.querySelector(`label[for="${element.id}"]`);
+        if (label) {
+          labelText = label.textContent?.toLowerCase() || '';
+        }
+      }
+
+      const allText = Object.values(attrs).join(' ') + ' ' + labelText;
+
+      // Name patterns
+      if (
+        attrs.autocomplete.includes('name') ||
+        attrs.autocomplete === 'given-name' ||
+        attrs.autocomplete === 'family-name' ||
+        attrs.autocomplete === 'additional-name' ||
+        /\b(name|first.*name|last.*name|full.*name|given.*name|family.*name)\b/.test(
+          allText
+        )
+      ) {
+        return 'name';
+      }
+
+      // Address patterns
+      if (
+        attrs.autocomplete.includes('address') ||
+        attrs.autocomplete === 'street-address' ||
+        attrs.autocomplete === 'address-line1' ||
+        attrs.autocomplete === 'address-line2' ||
+        /\b(address|street|city|zip|postal|location)\b/.test(allText)
+      ) {
+        return 'address';
+      }
+
+      // If it's a textarea or large text input, likely freeform
+      if (
+        element.tagName === 'TEXTAREA' ||
+        (element.tagName === 'INPUT' &&
+          (element as HTMLInputElement).type === 'text' &&
+          !expectedTypes.size)
+      ) {
+        return 'freeform';
+      }
+
+      return 'unknown';
     };
 
     // Check if we should skip AI scanning for this input
@@ -610,9 +685,14 @@ export default defineContentScript({
 
         const startTime = performance.now();
 
+        // Determine fieldType from input element
+        const expectedTypes = getExpectedInputType(input);
+        const fieldType = getFieldType(input, expectedTypes);
+
         const result = await apiClient.analyzeContext(
           text,
-          window.location.hostname
+          window.location.hostname,
+          fieldType
         );
 
         const duration = Math.round(performance.now() - startTime);

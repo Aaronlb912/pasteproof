@@ -163,12 +163,14 @@ export default function PopupApp() {
       if (isAuthenticated) {
         try {
           const response = await fetch(
-            `${import.meta.env.VITE_API_URL}/v1/whitelist/check/${domain}`,
+            `${import.meta.env.VITE_API_URL}/v1/whitelist/check`,
             {
+              method: 'POST',
               headers: {
                 'X-API-Key': authToken,
                 'Content-Type': 'application/json',
               },
+              body: JSON.stringify({ domain }),
             }
           );
           const data = await response.json();

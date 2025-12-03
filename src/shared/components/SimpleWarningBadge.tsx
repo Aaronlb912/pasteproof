@@ -72,7 +72,8 @@ export function SimpleWarningBadge({
 
       const result = await apiClient.analyzeContext(
         inputText || '',
-        window.location.hostname
+        window.location.hostname,
+        'freeform' // Default to freeform for manual scans without input context
       );
 
       setAiDetections(result?.detections || []);

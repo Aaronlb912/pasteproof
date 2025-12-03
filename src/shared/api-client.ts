@@ -143,8 +143,12 @@ export class PasteProofApiClient {
   }
 
   async isWhitelisted(domain: string): Promise<boolean> {
-    const data = await this.fetch<{ whitelisted: boolean; domain: string }>(
-      `/v1/whitelist/check/${encodeURIComponent(domain)}`
+    const data = await this.fetch<{ whitelisted: boolean }>(
+      '/v1/whitelist/check',
+      {
+        method: 'POST',
+        body: JSON.stringify({ domain }),
+      }
     );
     return data.whitelisted;
   }
@@ -152,8 +156,23 @@ export class PasteProofApiClient {
   // AI Context Analysis
   async analyzeContext(
     text: string,
-    context?: string
+    context?: string,
+    fieldType?: 'name' | 'email' | 'address' | 'phone' | 'freeform' | 'unknown'
   ): Promise<AiAnalysisResult> {
+    const body: {
+      text: string;
+      context?: string;
+      fieldType?: string;
+    } = { text };
+
+    if (context) {
+      body.context = context;
+    }
+
+    if (fieldType) {
+      body.fieldType = fieldType;
+    }
+
     const data = await this.fetch<{
       success: boolean;
       analysis: AiAnalysisResult;
@@ -164,7 +183,7 @@ export class PasteProofApiClient {
       };
     }>('/v1/analyze-context', {
       method: 'POST',
-      body: JSON.stringify({ text, context }),
+      body: JSON.stringify(body),
     });
     return data.analysis;
   }
