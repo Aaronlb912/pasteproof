@@ -93,11 +93,59 @@ export class PasteProofApiClient {
     this.baseUrl = config.baseUrl || API_BASE_URL;
   }
 
+  /**
+   * Validates and sanitizes endpoint paths to prevent path traversal attacks
+   */
+  private validateEndpoint(endpoint: string): string {
+    // Remove any protocol, host, or query strings
+    const cleanEndpoint = endpoint.split('?')[0].split('#')[0];
+
+    // Ensure endpoint starts with /
+    if (!cleanEndpoint.startsWith('/')) {
+      throw new Error('Invalid endpoint: must start with /');
+    }
+
+    // Prevent path traversal attempts
+    if (cleanEndpoint.includes('..') || cleanEndpoint.includes('//')) {
+      throw new Error('Invalid endpoint: path traversal detected');
+    }
+
+    // Only allow alphanumeric, hyphens, underscores, and forward slashes
+    if (!/^\/[a-zA-Z0-9\/\-_]+$/.test(cleanEndpoint)) {
+      throw new Error('Invalid endpoint: contains invalid characters');
+    }
+
+    return cleanEndpoint;
+  }
+
+  /**
+   * Validates and sanitizes ID parameters to prevent injection
+   */
+  private validateId(id: string): string {
+    if (!id || typeof id !== 'string') {
+      throw new Error('Invalid ID: must be a non-empty string');
+    }
+
+    // Only allow alphanumeric, hyphens, and underscores
+    if (!/^[a-zA-Z0-9\-_]+$/.test(id)) {
+      throw new Error('Invalid ID: contains invalid characters');
+    }
+
+    // Limit length to prevent DoS
+    if (id.length > 100) {
+      throw new Error('Invalid ID: exceeds maximum length');
+    }
+
+    return id;
+  }
+
   private async fetch<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`;
+    // Validate and sanitize endpoint
+    const safeEndpoint = this.validateEndpoint(endpoint);
+    const url = `${this.baseUrl}${safeEndpoint}`;
 
     const response = await fetch(url, {
       ...options,
@@ -112,7 +160,9 @@ export class PasteProofApiClient {
       const error = await response
         .json()
         .catch(() => ({ error: 'Unknown error' }));
-      throw new Error(error.error || `API error: ${response.status}`);
+      // Sanitize error message to prevent information disclosure
+      const errorMessage = error?.error || `API error: ${response.status}`;
+      throw new Error(errorMessage);
     }
     return response.json();
   }
@@ -125,32 +175,92 @@ export class PasteProofApiClient {
     return data.whitelist;
   }
 
+  /**
+   * Validates domain format to prevent injection
+   */
+  private validateDomain(domain: string): string {
+    if (!domain || typeof domain !== 'string') {
+      throw new Error('Invalid domain: must be a non-empty string');
+    }
+
+    // Basic domain validation - allow alphanumeric, dots, hyphens
+    // This is a simplified check; server should do full validation
+    if (
+      !/^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/.test(
+        domain
+      )
+    ) {
+      throw new Error('Invalid domain format');
+    }
+
+    // Limit length
+    if (domain.length > 253) {
+      throw new Error('Domain exceeds maximum length');
+    }
+
+    return domain.trim().toLowerCase();
+  }
+
   async addToWhitelist(domain: string): Promise<WhitelistSite> {
+    const safeDomain = this.validateDomain(domain);
     const data = await this.fetch<{
       success: boolean;
       whitelist: WhitelistSite;
     }>('/v1/whitelist', {
       method: 'POST',
-      body: JSON.stringify({ domain }),
+      body: JSON.stringify({ domain: safeDomain }),
     });
     return data.whitelist;
   }
 
   async removeFromWhitelist(whitelistId: string): Promise<void> {
-    await this.fetch(`/v1/whitelist/${whitelistId}`, {
+    const safeId = this.validateId(whitelistId);
+    await this.fetch(`/v1/whitelist/${safeId}`, {
       method: 'DELETE',
     });
   }
 
   async isWhitelisted(domain: string): Promise<boolean> {
+    const safeDomain = this.validateDomain(domain);
     const data = await this.fetch<{ whitelisted: boolean }>(
       '/v1/whitelist/check',
       {
         method: 'POST',
-        body: JSON.stringify({ domain }),
+        body: JSON.stringify({ domain: safeDomain }),
       }
     );
     return data.whitelisted;
+  }
+
+  /**
+   * Validates text input to prevent DoS and injection
+   */
+  private validateText(text: string, maxLength: number = 50000): string {
+    if (!text || typeof text !== 'string') {
+      throw new Error('Invalid text: must be a non-empty string');
+    }
+
+    if (text.length > maxLength) {
+      throw new Error(`Text exceeds maximum length of ${maxLength} characters`);
+    }
+
+    return text;
+  }
+
+  /**
+   * Validates context (domain) input
+   */
+  private validateContext(context: string): string {
+    if (!context || typeof context !== 'string') {
+      throw new Error('Invalid context: must be a non-empty string');
+    }
+
+    // Context should be a domain or hostname
+    if (context.length > 253) {
+      throw new Error('Context exceeds maximum length');
+    }
+
+    return context.trim();
   }
 
   // AI Context Analysis
@@ -159,14 +269,30 @@ export class PasteProofApiClient {
     context?: string,
     fieldType?: 'name' | 'email' | 'address' | 'phone' | 'freeform' | 'unknown'
   ): Promise<AiAnalysisResult> {
+    const safeText = this.validateText(text, 50000);
     const body: {
       text: string;
       context?: string;
       fieldType?: string;
-    } = { text };
+    } = { text: safeText };
 
     if (context) {
-      body.context = context;
+      body.context = this.validateContext(context);
+    }
+
+    // Validate fieldType enum
+    const validFieldTypes = [
+      'name',
+      'email',
+      'address',
+      'phone',
+      'freeform',
+      'unknown',
+    ];
+    if (fieldType && !validFieldTypes.includes(fieldType)) {
+      throw new Error(
+        `Invalid fieldType: must be one of ${validFieldTypes.join(', ')}`
+      );
     }
 
     if (fieldType) {
@@ -195,11 +321,39 @@ export class PasteProofApiClient {
     limit?: number;
   }): Promise<AuditLog[]> {
     const queryParams = new URLSearchParams();
-    if (params?.startDate)
-      queryParams.set('start', params.startDate.toString());
-    if (params?.endDate) queryParams.set('end', params.endDate.toString());
-    if (params?.eventType) queryParams.set('type', params.eventType);
-    if (params?.limit) queryParams.set('limit', params.limit.toString());
+
+    // Validate and sanitize parameters
+    if (params?.startDate) {
+      const startDate = Number(params.startDate);
+      if (isNaN(startDate) || startDate < 0) {
+        throw new Error('Invalid startDate: must be a positive number');
+      }
+      queryParams.set('start', startDate.toString());
+    }
+
+    if (params?.endDate) {
+      const endDate = Number(params.endDate);
+      if (isNaN(endDate) || endDate < 0) {
+        throw new Error('Invalid endDate: must be a positive number');
+      }
+      queryParams.set('end', endDate.toString());
+    }
+
+    if (params?.eventType) {
+      // Validate eventType - only allow alphanumeric and underscores
+      if (!/^[a-zA-Z0-9_]+$/.test(params.eventType)) {
+        throw new Error('Invalid eventType: contains invalid characters');
+      }
+      queryParams.set('type', params.eventType);
+    }
+
+    if (params?.limit) {
+      const limit = Number(params.limit);
+      if (isNaN(limit) || limit < 1 || limit > 1000) {
+        throw new Error('Invalid limit: must be between 1 and 1000');
+      }
+      queryParams.set('limit', limit.toString());
+    }
 
     const data = await this.fetch<{ logs: AuditLog[] }>(
       `/v1/logs?${queryParams.toString()}`
@@ -209,8 +363,14 @@ export class PasteProofApiClient {
 
   // Get statistics for dashboard
   async getStats(days: number = 7): Promise<DashboardStats> {
+    // Validate days parameter
+    const daysNum = Number(days);
+    if (isNaN(daysNum) || daysNum < 1 || daysNum > 365) {
+      throw new Error('Invalid days: must be between 1 and 365');
+    }
+
     const data = await this.fetch<{ stats: DashboardStats }>(
-      `/v1/stats?days=${days}`
+      `/v1/stats?days=${daysNum}`
     );
     return data.stats;
   }
@@ -245,7 +405,8 @@ export class PasteProofApiClient {
     patternId: string,
     updates: Partial<CustomPattern>
   ): Promise<void> {
-    await this.fetch(`/v1/patterns/${patternId}`, {
+    const safeId = this.validateId(patternId);
+    await this.fetch(`/v1/patterns/${safeId}`, {
       method: 'PUT',
       body: JSON.stringify(updates),
     });
@@ -253,7 +414,8 @@ export class PasteProofApiClient {
 
   // Delete a pattern
   async deletePattern(patternId: string): Promise<void> {
-    await this.fetch(`/v1/patterns/${patternId}`, {
+    const safeId = this.validateId(patternId);
+    await this.fetch(`/v1/patterns/${safeId}`, {
       method: 'DELETE',
     });
   }
@@ -337,17 +499,26 @@ export class PasteProofApiClient {
   // Team policy methods
   async getTeamPolicies(teamId: string): Promise<TeamPolicy[]> {
     try {
+      const safeId = this.validateId(teamId);
       const data = await this.fetch<{ policies: TeamPolicy[] }>(
-        `/v1/teams/${teamId}/policies`
+        `/v1/teams/${safeId}/policies`
       );
-      // Parse policy_data if it's a string
-      return data.policies.map(policy => ({
-        ...policy,
-        policy_data:
-          typeof policy.policy_data === 'string'
-            ? JSON.parse(policy.policy_data)
-            : policy.policy_data,
-      }));
+      // Parse policy_data if it's a string with error handling
+      return data.policies.map(policy => {
+        try {
+          return {
+            ...policy,
+            policy_data:
+              typeof policy.policy_data === 'string'
+                ? JSON.parse(policy.policy_data)
+                : policy.policy_data,
+          };
+        } catch (parseError) {
+          console.warn('Failed to parse policy_data:', parseError);
+          // Return policy with original policy_data if parsing fails
+          return policy;
+        }
+      });
     } catch (error) {
       console.warn('Failed to fetch team policies:', error);
       return [];

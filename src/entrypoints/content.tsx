@@ -97,15 +97,55 @@ export default defineContentScript({
     // AUTH LISTENERS
     // ============================================
 
-    window.addEventListener('message', async event => {
-      const trustedDomains = ['pasteproof.com', 'localhost', 'vercel.app'];
-      const isTrusted = trustedDomains.some(domain =>
-        event.origin.includes(domain)
-      );
+    /**
+     * Validates origin to prevent subdomain attacks
+     */
+    const isValidOrigin = (origin: string): boolean => {
+      try {
+        const url = new URL(origin);
+        const hostname = url.hostname.toLowerCase();
 
-      if (!isTrusted) return;
+        // Exact matches for trusted domains
+        const trustedDomains = [
+          'pasteproof.com',
+          'www.pasteproof.com',
+          'localhost',
+          '127.0.0.1',
+        ];
+
+        // Check for exact match
+        if (trustedDomains.includes(hostname)) {
+          return true;
+        }
+
+        // Check for vercel.app subdomains (pasteproof-*.vercel.app)
+        if (hostname.endsWith('.vercel.app')) {
+          const subdomain = hostname.replace('.vercel.app', '');
+          // Only allow pasteproof-related subdomains
+          if (subdomain.startsWith('pasteproof')) {
+            return true;
+          }
+        }
+
+        return false;
+      } catch {
+        return false;
+      }
+    };
+
+    window.addEventListener('message', async event => {
+      // Validate origin to prevent subdomain attacks
+      if (!isValidOrigin(event.origin)) {
+        return;
+      }
 
       if (event.data.type === 'PASTEPROOF_AUTH_SUCCESS') {
+        // Validate authToken format
+        if (!event.data.authToken || typeof event.data.authToken !== 'string') {
+          console.warn('Invalid auth token format');
+          return;
+        }
+
         await storage.setItem('local:authToken', event.data.authToken);
         await storage.setItem('local:user', event.data.user);
 
@@ -125,32 +165,59 @@ export default defineContentScript({
       initializeApiClient(token);
     });
 
-    // Check localStorage on auth page
-    const currentHostname = window.location.hostname;
-    if (
-      currentHostname.includes('pasteproof') ||
-      currentHostname.includes('localhost') ||
-      currentHostname.includes('vercel.app')
-    ) {
+    // Check localStorage on auth page (legacy support - migrate to extension storage)
+    // SECURITY: Only check on trusted domains
+    const currentHostname = window.location.hostname.toLowerCase();
+    const isTrustedAuthDomain =
+      currentHostname === 'pasteproof.com' ||
+      currentHostname === 'www.pasteproof.com' ||
+      currentHostname === 'localhost' ||
+      currentHostname === '127.0.0.1' ||
+      (currentHostname.endsWith('.vercel.app') &&
+        currentHostname.startsWith('pasteproof'));
+
+    if (isTrustedAuthDomain) {
       try {
         const token = localStorage.getItem('pasteproof_auth_token');
         const userStr = localStorage.getItem('pasteproof_user');
 
         if (token && userStr) {
-          const user = JSON.parse(userStr);
+          // Validate token format
+          if (typeof token !== 'string' || token.length < 10) {
+            console.warn('Invalid token format from localStorage');
+            return;
+          }
 
-          await browser.storage.local.set({
-            authToken: token,
-            user,
-          });
+          try {
+            const user = JSON.parse(userStr);
 
-          localStorage.removeItem('pasteproof_auth_token');
-          localStorage.removeItem('pasteproof_user');
+            // Basic validation of user object
+            if (!user || typeof user !== 'object') {
+              console.warn('Invalid user object from localStorage');
+              return;
+            }
 
-          authToken = token;
-          initializeApiClient(token);
+            await browser.storage.local.set({
+              authToken: token,
+              user,
+            });
+
+            // Clean up localStorage after migration
+            localStorage.removeItem('pasteproof_auth_token');
+            localStorage.removeItem('pasteproof_user');
+
+            authToken = token;
+            initializeApiClient(token);
+          } catch (parseError) {
+            console.warn(
+              'Failed to parse user data from localStorage:',
+              parseError
+            );
+          }
         }
-      } catch (err) {}
+      } catch (err) {
+        console.warn('Error reading from localStorage:', err);
+      }
     }
 
     if (authToken) {
@@ -194,13 +261,29 @@ export default defineContentScript({
     // Initialize team policies on page load
     async function initializeWithTeamPolicies() {
       try {
-        // Get team_id from localStorage (or browser storage)
-        const teamId =
-          localStorage.getItem('currentTeamId') ||
-          (await storage.getItem<string>('local:currentTeamId'));
+        // Get team_id from extension storage (preferred) or localStorage (legacy)
+        // SECURITY: Prefer extension storage over localStorage
+        let teamId = await storage.getItem<string>('local:currentTeamId');
+
+        // Fallback to localStorage for legacy support
+        // TODO: Remove localStorage fallback in future version
+        if (!teamId) {
+          const localTeamId = localStorage.getItem('currentTeamId');
+          if (localTeamId) {
+            // Migrate to extension storage
+            await storage.setItem('local:currentTeamId', localTeamId);
+            teamId = localTeamId;
+          }
+        }
 
         if (!teamId) {
           return; // User not in a team
+        }
+
+        // Validate teamId format
+        if (!/^[a-zA-Z0-9\-_]+$/.test(teamId)) {
+          console.warn('Invalid teamId format');
+          return;
         }
 
         const apiClient = getApiClient();
@@ -234,13 +317,23 @@ export default defineContentScript({
     }
 
     // Helper function to get current team_id
+    // SECURITY: Prefer extension storage over localStorage
     const getCurrentTeamId = async (): Promise<string | null> => {
       try {
-        return (
-          localStorage.getItem('currentTeamId') ||
-          (await storage.getItem<string>('local:currentTeamId')) ||
-          null
-        );
+        // First check extension storage (more secure)
+        const teamId = await storage.getItem<string>('local:currentTeamId');
+        if (teamId) {
+          return teamId;
+        }
+        // Fallback to localStorage for legacy support (less secure)
+        // TODO: Remove localStorage fallback in future version
+        const localTeamId = localStorage.getItem('currentTeamId');
+        if (localTeamId) {
+          // Migrate to extension storage
+          await storage.setItem('local:currentTeamId', localTeamId);
+          return localTeamId;
+        }
+        return null;
       } catch {
         return null;
       }
@@ -302,11 +395,22 @@ export default defineContentScript({
       };
 
       // Check for associated label
+      // SECURITY: Escape CSS selector special characters to prevent injection
       let labelText = '';
       if (element.id) {
-        const label = document.querySelector(`label[for="${element.id}"]`);
-        if (label) {
-          labelText = label.textContent?.toLowerCase() || '';
+        // Escape special CSS selector characters
+        const escapedId = element.id.replace(
+          /[!"#$%&'()*+,.\/:;<=>?@[\\\]^`{|}~]/g,
+          '\\$&'
+        );
+        try {
+          const label = document.querySelector(`label[for="${escapedId}"]`);
+          if (label) {
+            labelText = label.textContent?.toLowerCase() || '';
+          }
+        } catch (selectorError) {
+          // If selector fails, skip label lookup
+          console.warn('Failed to query label selector:', selectorError);
         }
       }
 
@@ -395,11 +499,22 @@ export default defineContentScript({
       };
 
       // Check for associated label
+      // SECURITY: Escape CSS selector special characters to prevent injection
       let labelText = '';
       if (element.id) {
-        const label = document.querySelector(`label[for="${element.id}"]`);
-        if (label) {
-          labelText = label.textContent?.toLowerCase() || '';
+        // Escape special CSS selector characters
+        const escapedId = element.id.replace(
+          /[!"#$%&'()*+,.\/:;<=>?@[\\\]^`{|}~]/g,
+          '\\$&'
+        );
+        try {
+          const label = document.querySelector(`label[for="${escapedId}"]`);
+          if (label) {
+            labelText = label.textContent?.toLowerCase() || '';
+          }
+        } catch (selectorError) {
+          // If selector fails, skip label lookup
+          console.warn('Failed to query label selector:', selectorError);
         }
       }
 
@@ -506,9 +621,12 @@ export default defineContentScript({
       );
 
       // Replace all detected values with anonymized versions
+      // SECURITY: Use literal string replacement to prevent regex injection
       sortedDetections.forEach(d => {
         const anonymized = anonymizeValue(d);
-        newValue = newValue.replace(d.value, anonymized);
+        // Escape special regex characters in the search string for literal replacement
+        const escapedValue = d.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        newValue = newValue.replace(new RegExp(escapedValue, 'g'), anonymized);
       });
 
       // Set the new value based on element type
@@ -655,6 +773,153 @@ export default defineContentScript({
       return cleanedText.length >= MIN_TEXT_LENGTH;
     };
 
+    // High-confidence patterns that should be detected locally and redacted before AI
+    const highConfidencePatterns = [
+      {
+        type: 'API_KEY',
+        pattern:
+          /(?:api[_-]?key|apikey)["\s:=]+["']?([a-zA-Z0-9_\-]{20,})["']?/gi,
+      },
+      {
+        type: 'AWS_KEY',
+        pattern: /AKIA[0-9A-Z]{16}/g,
+      },
+      {
+        type: 'PRIVATE_KEY',
+        pattern:
+          /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----[A-Za-z0-9+\/=\s\n\r]+-----END (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/gs,
+      },
+      {
+        type: 'SSN',
+        pattern: /\b\d{3}-\d{2}-\d{4}\b/g,
+      },
+      {
+        type: 'CREDIT_CARD',
+        pattern:
+          /\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|3[0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b/g,
+      },
+      // HIPAA patterns
+      {
+        type: 'HIPAA_MRN',
+        pattern: /\bMRN[-\s]?\d{6,12}\b/gi,
+      },
+      {
+        type: 'HIPAA_ACCOUNT',
+        pattern: /\bAccount[-\s]?(?:Number|#)?[-\s]?\d{6,12}\b/gi,
+      },
+      {
+        type: 'HIPAA_DOB',
+        pattern:
+          /\b(?:DOB|Date of Birth)[-\s:]?\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/gi,
+      },
+      // PCI-DSS patterns
+      {
+        type: 'PCI_CVV',
+        pattern:
+          /\b(?:CVV|CVC|Card Verification)[-\s]?(?:Value|Code)?[-\s]?\d{3,4}\b/gi,
+      },
+      {
+        type: 'PCI_PAN',
+        pattern: /\b(?:PAN|Primary Account Number)[-\s]?\d{13,19}\b/gi,
+      },
+      {
+        type: 'PCI_TRACK',
+        pattern: /\b%?[A-Z]\d{13,19}=[\d?]{4,}\b/g,
+      },
+      {
+        type: 'PCI_EXPIRY',
+        pattern: /\b(?:Exp|Expiry|Expiration)[-\s:]?\d{1,2}[/-]\d{2,4}\b/gi,
+      },
+      // GDPR patterns
+      {
+        type: 'GDPR_PASSPORT',
+        pattern:
+          /\b(?:Passport|Passport Number|Passport #)[-\s:]?[A-Z0-9]{6,9}\b/gi,
+      },
+      {
+        type: 'GDPR_NIN',
+        pattern: /\b(?:NI|NINO|National Insurance)[-\s]?[A-Z]{2}\d{6}[A-Z]\b/gi,
+      },
+      {
+        type: 'GDPR_IBAN',
+        pattern: /\b[A-Z]{2}\d{2}[A-Z0-9]{4,30}\b/g,
+      },
+    ];
+
+    // Detect high-confidence patterns locally
+    const detectLocally = (
+      text: string,
+      patterns: Array<{ type: string; pattern: RegExp }>
+    ): Array<{ type: string; value: string; start?: number; end?: number }> => {
+      const detections: Array<{
+        type: string;
+        value: string;
+        start?: number;
+        end?: number;
+      }> = [];
+
+      for (const { type, pattern } of patterns) {
+        // Reset regex lastIndex for global patterns
+        pattern.lastIndex = 0;
+        const matches = text.matchAll(pattern);
+
+        for (const match of matches) {
+          const value = match[0];
+          detections.push({
+            type,
+            value,
+            start: match.index,
+            end:
+              match.index !== undefined
+                ? match.index + value.length
+                : undefined,
+          });
+        }
+      }
+
+      // Remove duplicates
+      return detections.filter(
+        (result, index, self) =>
+          index ===
+          self.findIndex(
+            r =>
+              r.type === result.type &&
+              r.value === result.value &&
+              r.start === result.start
+          )
+      );
+    };
+
+    // Redact detected secrets from text
+    const redactSecrets = (
+      text: string,
+      detections: Array<{
+        type: string;
+        value: string;
+        start?: number;
+        end?: number;
+      }>
+    ): string => {
+      if (detections.length === 0) return text;
+
+      // Sort by start position (descending) to replace from end to start
+      const sorted = [...detections].sort(
+        (a, b) => (b.start || 0) - (a.start || 0)
+      );
+
+      let redactedText = text;
+      for (const detection of sorted) {
+        if (detection.start !== undefined && detection.end !== undefined) {
+          const before = redactedText.substring(0, detection.start);
+          const after = redactedText.substring(detection.end);
+          const redaction = `[REDACTED_${detection.type}]`;
+          redactedText = before + redaction + after;
+        }
+      }
+
+      return redactedText;
+    };
+
     // Perform AI scan on input with optimization
     const performAiScan = async (
       input: HTMLElement,
@@ -677,6 +942,49 @@ export default defineContentScript({
         return cachedResult;
       }
 
+      // Detect high-confidence patterns locally first
+      const localDetections = detectLocally(text, highConfidencePatterns);
+
+      // If we find PRIVATE_KEY or AWS_KEY, return immediately without sending to AI
+      if (
+        localDetections.some(
+          d => d.type === 'PRIVATE_KEY' || d.type === 'AWS_KEY'
+        )
+      ) {
+        // Log all local detections (including PRIVATE_KEY and AWS_KEY)
+        const domain = window.location.hostname;
+        const teamId = await getCurrentTeamId();
+        localDetections.forEach((detection: any) => {
+          detectionQueue.add({
+            type: detection.type,
+            domain,
+            action: 'detected',
+            metadata: {
+              confidence: 100,
+              reason:
+                detection.type === 'PRIVATE_KEY' || detection.type === 'AWS_KEY'
+                  ? 'High-confidence local detection - not sent to AI'
+                  : 'Detected locally - high confidence pattern',
+              risk_level: 'critical',
+              source: 'local',
+            },
+            team_id: teamId,
+          });
+        });
+
+        // Return all local detections formatted for AI detection format
+        return localDetections.map(d => ({
+          type: d.type,
+          value: d.value,
+          confidence: 100,
+          reason: 'Detected locally - high confidence pattern',
+          source: 'local',
+        }));
+      }
+
+      // Redact detected secrets before sending to AI
+      const redactedText = redactSecrets(text, localDetections);
+
       try {
         const apiClient = getApiClient();
         if (!apiClient) {
@@ -689,8 +997,9 @@ export default defineContentScript({
         const expectedTypes = getExpectedInputType(input);
         const fieldType = getFieldType(input, expectedTypes);
 
+        // Send redacted text to AI
         const result = await apiClient.analyzeContext(
-          text,
+          redactedText,
           window.location.hostname,
           fieldType
         );
@@ -699,8 +1008,23 @@ export default defineContentScript({
 
         const detections = result.detections || [];
 
+        // Combine local detections with AI detections
+        const allDetections = [
+          ...localDetections.map(d => ({
+            type: d.type,
+            value: d.value,
+            confidence: 100,
+            reason: 'Detected locally - high confidence pattern',
+            source: 'local',
+          })),
+          ...detections.map((d: any) => ({
+            ...d,
+            source: 'ai',
+          })),
+        ];
+
         // Filter out detections that are pointing to already redacted content
-        const filteredDetections = detections.filter((detection: any) => {
+        const filteredDetections = allDetections.filter((detection: any) => {
           const value = detection.value || '';
           // Skip if the detected value is a redaction marker
           if (
@@ -708,7 +1032,8 @@ export default defineContentScript({
             value.includes('[REMOVED]') ||
             value.includes('[HIDDEN]') ||
             /•{4,}/.test(value) ||
-            /\*{4,}/.test(value)
+            /\*{4,}/.test(value) ||
+            value.includes('[REDACTED_')
           ) {
             return false;
           }
@@ -719,7 +1044,7 @@ export default defineContentScript({
         }
         filteredDetections.forEach((d, idx) => {});
 
-        // Log AI detections (only the filtered ones)
+        // Log all detections (local + AI)
         if (filteredDetections.length > 0) {
           const domain = window.location.hostname;
           const teamId = await getCurrentTeamId();
@@ -729,10 +1054,11 @@ export default defineContentScript({
               domain,
               action: 'detected',
               metadata: {
-                confidence: detection.confidence,
-                reason: detection.reason,
-                risk_level: result.risk_level,
-                source: 'ai',
+                confidence: detection.confidence || 100,
+                reason: detection.reason || 'Detected',
+                risk_level:
+                  detection.source === 'local' ? 'critical' : result.risk_level,
+                source: detection.source || 'ai',
               },
               team_id: teamId,
             });

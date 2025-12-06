@@ -4,7 +4,19 @@ export type PiiType =
   | 'EMAIL'
   | 'PHONE'
   | 'API_KEY'
+  | 'AWS_KEY'
+  | 'PRIVATE_KEY'
   | 'IP_ADDRESS'
+  | 'HIPAA_MRN'
+  | 'HIPAA_ACCOUNT'
+  | 'HIPAA_DOB'
+  | 'PCI_CVV'
+  | 'PCI_PAN'
+  | 'PCI_TRACK'
+  | 'PCI_EXPIRY'
+  | 'GDPR_PASSPORT'
+  | 'GDPR_NIN'
+  | 'GDPR_IBAN'
   | 'CUSTOM'; // For user-defined patterns
 
 export type DetectionResult = {
@@ -22,7 +34,7 @@ export type CustomPattern = {
   pattern: string;
   pattern_type: string;
   description?: string;
-  is_active: boolean;
+  is_active: boolean | number | string;
 };
 
 // Built-in patterns
@@ -33,7 +45,8 @@ const BUILT_IN_PATTERNS: Array<{
 }> = [
   {
     type: 'CREDIT_CARD',
-    regex: /\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g,
+    regex:
+      /\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|3[0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b/g,
     validate: luhnCheck,
   },
   {
@@ -50,12 +63,64 @@ const BUILT_IN_PATTERNS: Array<{
   },
   {
     type: 'API_KEY',
+    regex: /(?:api[_-]?key|apikey)["\s:=]+["']?([a-zA-Z0-9_\-]{20,})["']?/gi,
+  },
+  {
+    type: 'AWS_KEY',
+    regex: /AKIA[0-9A-Z]{16}/g,
+  },
+  {
+    type: 'PRIVATE_KEY',
     regex:
-      /\b(?:api[_-]?key|token|secret)[_-]?[:\s]*['"]*([a-zA-Z0-9_\-]{20,})['"]*\b/gi,
+      /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----[A-Za-z0-9+\/=\s\n\r]+-----END (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/gs,
   },
   {
     type: 'IP_ADDRESS',
     regex: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g,
+  },
+  // HIPAA patterns
+  {
+    type: 'HIPAA_MRN',
+    regex: /\bMRN[-\s]?\d{6,12}\b/gi,
+  },
+  {
+    type: 'HIPAA_ACCOUNT',
+    regex: /\bAccount[-\s]?(?:Number|#)?[-\s]?\d{6,12}\b/gi,
+  },
+  {
+    type: 'HIPAA_DOB',
+    regex: /\b(?:DOB|Date of Birth)[-\s:]?\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/gi,
+  },
+  // PCI-DSS patterns
+  {
+    type: 'PCI_CVV',
+    regex:
+      /\b(?:CVV|CVC|Card Verification)[-\s]?(?:Value|Code)?[-\s]?\d{3,4}\b/gi,
+  },
+  {
+    type: 'PCI_PAN',
+    regex: /\b(?:PAN|Primary Account Number)[-\s]?\d{13,19}\b/gi,
+  },
+  {
+    type: 'PCI_TRACK',
+    regex: /\b%?[A-Z]\d{13,19}=[\d?]{4,}\b/g,
+  },
+  {
+    type: 'PCI_EXPIRY',
+    regex: /\b(?:Exp|Expiry|Expiration)[-\s:]?\d{1,2}[/-]\d{2,4}\b/gi,
+  },
+  // GDPR patterns
+  {
+    type: 'GDPR_PASSPORT',
+    regex: /\b(?:Passport|Passport Number|Passport #)[-\s:]?[A-Z0-9]{6,9}\b/gi,
+  },
+  {
+    type: 'GDPR_NIN',
+    regex: /\b(?:NI|NINO|National Insurance)[-\s]?[A-Z]{2}\d{6}[A-Z]\b/gi,
+  },
+  {
+    type: 'GDPR_IBAN',
+    regex: /\b[A-Z]{2}\d{2}[A-Z0-9]{4,30}\b/g,
   },
 ];
 
@@ -88,9 +153,18 @@ function luhnCheck(cardNumber: string): boolean {
 // Set custom patterns (called after fetching from API)
 export function setCustomPatterns(patterns: CustomPattern[]) {
   customPatterns = patterns.filter(p => {
-    const isActive =
-      p.is_active === 1 || p.is_active === true || p.is_active === '1';
-    return isActive;
+    // Handle various types that might come from API (boolean, number, string)
+    const isActive = p.is_active;
+    if (typeof isActive === 'boolean') {
+      return isActive;
+    }
+    if (typeof isActive === 'number') {
+      return isActive === 1;
+    }
+    if (typeof isActive === 'string') {
+      return isActive === '1' || isActive.toLowerCase() === 'true';
+    }
+    return false;
   });
 
   // Test each pattern
