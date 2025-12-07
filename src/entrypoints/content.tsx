@@ -1430,18 +1430,17 @@ export default defineContentScript({
       const results = detectPii(text);
       const filteredResults = filterExpectedDetections(results, expectedTypes);
 
-      let aiDetections: any[] | null = null;
-      if (autoAiScan && !skipAi && aiScanOptimizer.shouldScan(text)) {
-        // performAiScan will handle caching internally
-        aiDetections = await performAiScan(input, text, filteredResults);
-      } else {
-        if (!autoAiScan) {
-        } else if (skipAi) {
-        } else if (!aiScanOptimizer.shouldScan(text)) {
-        }
-      }
+      // Show pattern detections immediately for instant feedback
+      handleDetection(filteredResults, null);
 
-      handleDetection(filteredResults, aiDetections);
+      // Then trigger AI scan asynchronously and update when ready
+      if (autoAiScan && !skipAi && aiScanOptimizer.shouldScan(text)) {
+        // Perform AI scan in background without blocking UI
+        performAiScan(input, text, filteredResults).then(aiDetections => {
+          // Update with AI detections when they're ready
+          handleDetection(filteredResults, aiDetections);
+        });
+      }
     }, 800);
 
     // Manual rescan function for context menu
@@ -1454,19 +1453,20 @@ export default defineContentScript({
       const results = detectPii(currentValue);
       const filteredResults = filterExpectedDetections(results, expectedTypes);
 
-      // Force AI scan (clear cache first to ensure fresh scan)
-      let aiDetections: any[] | null = null;
+      // Show pattern detections immediately for instant feedback
+      handleDetection(filteredResults, null);
+
+      // Then trigger AI scan asynchronously and update when ready
       if (autoAiScan && !skipAi && shouldScanText(currentValue)) {
         // Clear cache for this specific text to force a fresh scan
         aiScanOptimizer.clearCache();
-        aiDetections = await performAiScan(
-          contextMenuInput,
-          currentValue,
-          filteredResults
+        performAiScan(contextMenuInput, currentValue, filteredResults).then(
+          aiDetections => {
+            // Update with AI detections when they're ready
+            handleDetection(filteredResults, aiDetections);
+          }
         );
       }
-
-      handleDetection(filteredResults, aiDetections);
 
       // Focus the input after rescan
       contextMenuInput.focus();
@@ -1502,19 +1502,22 @@ export default defineContentScript({
             expectedTypes
           );
 
-          let aiDetections: any[] | null = null;
+          // Show pattern detections immediately for instant feedback
+          handleDetection(filteredResults, null);
+
+          // Then trigger AI scan asynchronously and update when ready
           if (
             autoAiScan &&
             !skipAi &&
             aiScanOptimizer.shouldScan(currentValue)
           ) {
-            aiDetections = await performAiScan(
-              input,
-              currentValue,
-              filteredResults
+            performAiScan(input, currentValue, filteredResults).then(
+              aiDetections => {
+                // Update with AI detections when they're ready
+                handleDetection(filteredResults, aiDetections);
+              }
             );
           }
-          handleDetection(filteredResults, aiDetections);
         }, 0);
       });
 
@@ -1566,17 +1569,18 @@ export default defineContentScript({
           expectedTypes
         );
 
-        let aiDetections: any[] | null = null;
-        if (autoAiScan && !skipAi && aiScanOptimizer.shouldScan(currentValue)) {
-          aiDetections = await performAiScan(
-            activeInput,
-            currentValue,
-            filteredResults
-          );
-        } else if (skipAi) {
-        }
+        // Show pattern detections immediately for instant feedback
+        handleDetection(filteredResults, null);
 
-        handleDetection(filteredResults, aiDetections);
+        // Then trigger AI scan asynchronously and update when ready
+        if (autoAiScan && !skipAi && aiScanOptimizer.shouldScan(currentValue)) {
+          performAiScan(activeInput, currentValue, filteredResults).then(
+            aiDetections => {
+              // Update with AI detections when they're ready
+              handleDetection(filteredResults, aiDetections);
+            }
+          );
+        }
 
         attachInputListener(activeInput);
       },
