@@ -726,14 +726,15 @@ export default defineContentScript({
             if (!activeInput) return;
 
             const freshExpectedTypes = getExpectedInputType(activeInput);
-            const freshAiDetections = await performAiScan(
-              activeInput,
-              currentValue
-            );
             const freshResults = detectPii(getInputValue(activeInput));
             const freshFiltered = filterExpectedDetections(
               freshResults,
               freshExpectedTypes
+            );
+            const freshAiDetections = await performAiScan(
+              activeInput,
+              currentValue,
+              freshFiltered
             );
             handleDetection(freshFiltered, freshAiDetections);
           }, 500); // Wait 500ms before re-running AI scan
@@ -920,7 +921,8 @@ export default defineContentScript({
     // Perform AI scan on input with optimization
     const performAiScan = async (
       input: HTMLElement,
-      text: string
+      text: string,
+      existingPatternDetections: DetectionResult[] = []
     ): Promise<any[] | null> => {
       const textPreview =
         text.length > 50 ? text.substring(0, 50) + '...' : text;
@@ -942,16 +944,25 @@ export default defineContentScript({
       // Detect high-confidence patterns locally first
       const localDetections = detectLocally(text, highConfidencePatterns);
 
+      // Filter out local detections that are already detected by pattern detections
+      // This prevents duplicates between Pattern Match and AI Scan tabs
+      // Check both exact match (value+type) and value-only match (same value detected differently)
+      const uniqueLocalDetections = localDetections.filter(localDet => {
+        return !existingPatternDetections.some(
+          patternDet => patternDet.value === localDet.value
+        );
+      });
+
       // If we find PRIVATE_KEY or AWS_KEY, return immediately without sending to AI
       if (
-        localDetections.some(
+        uniqueLocalDetections.some(
           d => d.type === 'PRIVATE_KEY' || d.type === 'AWS_KEY'
         )
       ) {
-        // Log all local detections (including PRIVATE_KEY and AWS_KEY)
+        // Log all unique local detections (including PRIVATE_KEY and AWS_KEY)
         const domain = window.location.hostname;
         const teamId = await getCurrentTeamId();
-        localDetections.forEach((detection: any) => {
+        uniqueLocalDetections.forEach((detection: any) => {
           detectionQueue.add({
             type: detection.type,
             domain,
@@ -969,8 +980,8 @@ export default defineContentScript({
           });
         });
 
-        // Return all local detections formatted for AI detection format
-        return localDetections.map(d => ({
+        // Return all unique local detections formatted for AI detection format
+        return uniqueLocalDetections.map(d => ({
           type: d.type,
           value: d.value,
           confidence: 100,
@@ -979,7 +990,7 @@ export default defineContentScript({
         }));
       }
 
-      // Redact detected secrets before sending to AI
+      // Redact detected secrets before sending to AI (use all local detections for redaction)
       const redactedText = redactSecrets(text, localDetections);
 
       try {
@@ -1005,9 +1016,10 @@ export default defineContentScript({
 
         const detections = result.detections || [];
 
-        // Combine local detections with AI detections
+        // Combine unique local detections with AI detections
+        // Filter out local detections that duplicate pattern detections
         const allDetections = [
-          ...localDetections.map(d => ({
+          ...uniqueLocalDetections.map(d => ({
             type: d.type,
             value: d.value,
             confidence: 100,
@@ -1363,6 +1375,45 @@ export default defineContentScript({
       return detections.filter(d => !expectedTypes.has(d.type));
     };
 
+    // Helper function to deduplicate detections based on value and position
+    // Prefers pattern detections over AI/local detections
+    const deduplicateDetections = (
+      patternDetections: DetectionResult[],
+      aiDetections: any[] | null
+    ): { patternDetections: DetectionResult[]; aiDetections: any[] | null } => {
+      if (!aiDetections || aiDetections.length === 0) {
+        return { patternDetections, aiDetections };
+      }
+
+      // Create a set of pattern detection keys (value:start:end)
+      const patternKeys = new Set<string>();
+      patternDetections.forEach(d => {
+        const key = `${d.value}:${d.start}:${d.end}`;
+        patternKeys.add(key);
+        // Also add keys for same value at any position to catch overlaps
+        patternKeys.add(`${d.value}:*:*`);
+      });
+
+      // Filter AI detections to remove those already detected by patterns
+      const filteredAiDetections = aiDetections.filter((aiDetection: any) => {
+        const value = aiDetection.value || '';
+        const key = `${value}:*:*`; // Check if value was detected by patterns
+
+        // Check if this value is already in pattern detections
+        const isDuplicate = patternDetections.some(
+          patternDet => patternDet.value === value
+        );
+
+        return !isDuplicate;
+      });
+
+      return {
+        patternDetections,
+        aiDetections:
+          filteredAiDetections.length > 0 ? filteredAiDetections : null,
+      };
+    };
+
     // Debounced scan with AI scan and optimization
     const debouncedScan = debounce(async (text: string, input: HTMLElement) => {
       const expectedTypes = getExpectedInputType(
@@ -1381,7 +1432,7 @@ export default defineContentScript({
       let aiDetections: any[] | null = null;
       if (autoAiScan && !skipAi && aiScanOptimizer.shouldScan(text)) {
         // performAiScan will handle caching internally
-        aiDetections = await performAiScan(input, text);
+        aiDetections = await performAiScan(input, text, filteredResults);
       } else {
         if (!autoAiScan) {
         } else if (skipAi) {
@@ -1407,7 +1458,11 @@ export default defineContentScript({
       if (autoAiScan && !skipAi && shouldScanText(currentValue)) {
         // Clear cache for this specific text to force a fresh scan
         aiScanOptimizer.clearCache();
-        aiDetections = await performAiScan(contextMenuInput, currentValue);
+        aiDetections = await performAiScan(
+          contextMenuInput,
+          currentValue,
+          filteredResults
+        );
       }
 
       handleDetection(filteredResults, aiDetections);
@@ -1452,7 +1507,11 @@ export default defineContentScript({
             !skipAi &&
             aiScanOptimizer.shouldScan(currentValue)
           ) {
-            aiDetections = await performAiScan(input, currentValue);
+            aiDetections = await performAiScan(
+              input,
+              currentValue,
+              filteredResults
+            );
           }
           handleDetection(filteredResults, aiDetections);
         }, 0);
@@ -1508,7 +1567,11 @@ export default defineContentScript({
 
         let aiDetections: any[] | null = null;
         if (autoAiScan && !skipAi && aiScanOptimizer.shouldScan(currentValue)) {
-          aiDetections = await performAiScan(activeInput, currentValue);
+          aiDetections = await performAiScan(
+            activeInput,
+            currentValue,
+            filteredResults
+          );
         } else if (skipAi) {
         }
 

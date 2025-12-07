@@ -150,6 +150,45 @@ function luhnCheck(cardNumber: string): boolean {
   return sum % 10 === 0;
 }
 
+// Helper function to detect what PII type a value might be
+// This helps normalize custom pattern types to match known PII types
+function detectPiiType(value: string): PiiType | null {
+  // Check SSN pattern
+  if (/\b\d{3}-\d{2}-\d{4}\b/.test(value)) {
+    return 'SSN';
+  }
+  // Check email pattern
+  if (/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/.test(value)) {
+    return 'EMAIL';
+  }
+  // Check phone pattern
+  if (/\b(\+\d{1,3}[\s-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/.test(value)) {
+    return 'PHONE';
+  }
+  // Check credit card pattern (with validation)
+  if (
+    /\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|3[0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b/.test(
+      value
+    ) &&
+    luhnCheck(value)
+  ) {
+    return 'CREDIT_CARD';
+  }
+  // Check AWS key
+  if (/AKIA[0-9A-Z]{16}/.test(value)) {
+    return 'AWS_KEY';
+  }
+  // Check private key
+  if (
+    /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----[A-Za-z0-9+\/=\s\n\r]+-----END (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/gs.test(
+      value
+    )
+  ) {
+    return 'PRIVATE_KEY';
+  }
+  return null;
+}
+
 // Set custom patterns (called after fetching from API)
 export function setCustomPatterns(patterns: CustomPattern[]) {
   customPatterns = patterns.filter(p => {
@@ -177,13 +216,15 @@ export function setCustomPatterns(patterns: CustomPattern[]) {
     }
   });
 }
+
 // Main detection function
 export function detectPii(text: string): DetectionResult[] {
   if (!text || text.length === 0) return [];
 
   const results: DetectionResult[] = [];
+  const builtInResults: DetectionResult[] = [];
 
-  // Check built-in patterns
+  // Check built-in patterns first (these take priority)
   for (const pattern of BUILT_IN_PATTERNS) {
     const matches = text.matchAll(pattern.regex);
 
@@ -195,16 +236,19 @@ export function detectPii(text: string): DetectionResult[] {
         continue;
       }
 
-      results.push({
+      const detection: DetectionResult = {
         type: pattern.type,
         value,
         start: match.index,
         end: match.index ? match.index + value.length : undefined,
-      });
+      };
+
+      builtInResults.push(detection);
+      results.push(detection);
     }
   }
 
-  // Check custom patterns
+  // Check custom patterns (only add if not already detected by built-in patterns)
   for (const customPattern of customPatterns) {
     try {
       const regex = new RegExp(customPattern.pattern, 'gi');
@@ -212,12 +256,42 @@ export function detectPii(text: string): DetectionResult[] {
 
       for (const match of matches) {
         const value = match[0];
+        const start = match.index;
+        const end = start !== undefined ? start + value.length : undefined;
+
+        // Check if this value at this position is already detected by a built-in pattern
+        const alreadyDetected = builtInResults.some(
+          builtIn =>
+            builtIn.value === value &&
+            builtIn.start === start &&
+            builtIn.end === end
+        );
+
+        if (alreadyDetected) {
+          // Skip this custom pattern detection since built-in already detected it
+          continue;
+        }
+
+        // Normalize the type - try to detect what PII type this is
+        let normalizedType = customPattern.pattern_type;
+        const detectedType = detectPiiType(value);
+        if (detectedType) {
+          // Use the detected type instead of generic CUSTOM/REGEX
+          normalizedType = detectedType;
+        } else if (
+          normalizedType === 'CUSTOM' ||
+          normalizedType === 'REGEX' ||
+          !normalizedType
+        ) {
+          // If pattern_type is generic, keep it as CUSTOM
+          normalizedType = 'CUSTOM';
+        }
 
         results.push({
-          type: customPattern.pattern_type,
+          type: normalizedType,
           value,
-          start: match.index,
-          end: match.index ? match.index + value.length : undefined,
+          start,
+          end,
           confidence: 0.9,
           patternName: customPattern.name,
         });
@@ -226,12 +300,52 @@ export function detectPii(text: string): DetectionResult[] {
       console.error(`Invalid custom pattern: ${customPattern.name}`, error);
     }
   }
-  // Remove duplicates (same value and type)
-  const uniqueResults = results.filter(
-    (result, index, self) =>
-      index ===
-      self.findIndex(r => r.type === result.type && r.value === result.value)
-  );
+
+  // Remove duplicates based on value and position (start/end)
+  // Prefer built-in detections over custom ones
+  const uniqueResults: DetectionResult[] = [];
+  const seen = new Set<string>();
+
+  // Helper to check if a result matches a built-in detection
+  const isBuiltInDetection = (result: DetectionResult): boolean => {
+    return builtInResults.some(
+      builtIn =>
+        builtIn.value === result.value &&
+        builtIn.start === result.start &&
+        builtIn.end === result.end &&
+        builtIn.type === result.type
+    );
+  };
+
+  // First, add all built-in detections (deduplicated by value+position)
+  for (const result of results) {
+    if (isBuiltInDetection(result)) {
+      const key = `${result.value}:${result.start}:${result.end}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueResults.push(result);
+      }
+    }
+  }
+
+  // Then add custom detections that don't overlap with built-in ones
+  for (const result of results) {
+    if (!isBuiltInDetection(result)) {
+      const key = `${result.value}:${result.start}:${result.end}`;
+      // Check if this value at this position was already detected by a built-in pattern
+      const isDuplicate = builtInResults.some(
+        builtIn =>
+          builtIn.value === result.value &&
+          builtIn.start === result.start &&
+          builtIn.end === result.end
+      );
+
+      if (!isDuplicate && !seen.has(key)) {
+        seen.add(key);
+        uniqueResults.push(result);
+      }
+    }
+  }
 
   return uniqueResults;
 }
