@@ -14,9 +14,6 @@ import {
 import { SimpleWarningBadge } from '@/shared/components';
 import { aiScanOptimizer } from '@/shared/ai-scan-optimizer';
 
-let authToken: string | null = null;
-
-const CACHE_DURATION = 30000; // 30 seconds
 const MIN_TEXT_LENGTH = 10;
 const MAX_TEXT_LENGTH = 5000;
 

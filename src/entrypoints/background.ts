@@ -123,9 +123,6 @@ export default defineBackground(() => {
         .sendMessage(tab.id, {
           action: 'rescanForPii',
         })
-        .then(() => {
-          console.log('[Paste Proof] Rescan message sent successfully');
-        })
         .catch(error => {
           console.error('[Paste Proof] Failed to send rescan message:', error);
         });

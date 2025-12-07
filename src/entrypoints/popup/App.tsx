@@ -29,7 +29,7 @@ type PopupState = {
   currentDomain: string;
   isWhitelisted: boolean;
   hasApiKey: boolean;
-  user?: any;
+  user?: User;
 };
 
 export default function PopupApp() {
@@ -146,7 +146,6 @@ export default function PopupApp() {
                 await storage.setItem('local:user', userData);
 
                 isAuthenticated = true;
-                console.log('✅ Retrieved auth from localStorage!');
               }
             } catch (scriptError) {
               console.log('Scripting API error (may be Firefox):', scriptError);
