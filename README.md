@@ -2,7 +2,6 @@
 
 <img width="1200" height="630" alt="og-image" src="https://github.com/user-attachments/assets/58209fcf-0946-4b32-bab7-cfaba1332fcf" />
 
-
 This repository contains the frontend code for the **PasteProof** browser extension. It's a privacy-first, Manifest V3 compliant extension built with the [WXT](https://wxt.dev/) framework to provide real-time detection of sensitive data (PII) directly in your browser.
 
 ## ✨ Features
@@ -37,8 +36,23 @@ Clone the repository and install the necessary dependencies.
 git clone <your-repo-url>
 cd paste-proof-extension
 pnpm install
-
 ```
+
+### 1.5. Environment Configuration (Optional)
+
+For self-hosting, create a `.env` file in the root directory:
+
+```bash
+cp .env.example .env
+```
+
+Then set `VITE_SELF_HOSTED_API_URL` to your self-hosted backend URL:
+
+```bash
+VITE_SELF_HOSTED_API_URL=https://your-backend.workers.dev
+```
+
+If this variable is not set, the extension will use the production API at `https://api.pasteproof.com`.
 
 ### 2. Running in Development Mode
 

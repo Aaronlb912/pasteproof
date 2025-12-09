@@ -4,6 +4,7 @@ import pasteproofIcon from '@/assets/icons/pasteproof-48.png';
 import {
   getApiClient,
   initializeApiClient,
+  getApiBaseUrl,
   type Team,
 } from '@/shared/api-client';
 import LockIcon from '@mui/icons-material/Lock';
@@ -161,17 +162,15 @@ export default function PopupApp() {
       let isWhitelisted = false;
       if (isAuthenticated) {
         try {
-          const response = await fetch(
-            `${import.meta.env.VITE_API_URL}/v1/whitelist/check`,
-            {
-              method: 'POST',
-              headers: {
-                'X-API-Key': authToken,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ domain }),
-            }
-          );
+          const baseUrl = getApiBaseUrl();
+          const response = await fetch(`${baseUrl}/v1/whitelist/check`, {
+            method: 'POST',
+            headers: {
+              'X-API-Key': authToken,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ domain }),
+          });
           const data = await response.json();
           isWhitelisted = data.whitelisted;
         } catch (error) {
@@ -282,34 +281,29 @@ export default function PopupApp() {
 
     try {
       const authToken = await storage.getItem<string>('local:authToken');
+      const baseUrl = getApiBaseUrl();
 
       if (state.isWhitelisted) {
-        const response = await fetch(
-          `${import.meta.env.VITE_API_URL}/v1/whitelist`,
-          {
-            headers: {
-              'X-API-Key': authToken as string,
-            },
-          }
-        );
+        const response = await fetch(`${baseUrl}/v1/whitelist`, {
+          headers: {
+            'X-API-Key': authToken as string,
+          },
+        });
         const data = await response.json();
         const entry = data.whitelist.find(
           (w: any) => w.domain === state.currentDomain
         );
 
         if (entry) {
-          await fetch(
-            `${import.meta.env.VITE_API_URL}/v1/whitelist/${entry.id}`,
-            {
-              method: 'DELETE',
-              headers: {
-                'X-API-Key': authToken as string,
-              },
-            }
-          );
+          await fetch(`${baseUrl}/v1/whitelist/${entry.id}`, {
+            method: 'DELETE',
+            headers: {
+              'X-API-Key': authToken as string,
+            },
+          });
         }
       } else {
-        await fetch(`${import.meta.env.VITE_API_URL}/v1/whitelist`, {
+        await fetch(`${baseUrl}/v1/whitelist`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

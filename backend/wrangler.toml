@@ -1,0 +1,38 @@
+name = "pasteproof-backend"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+
+[env.production]
+name = "pasteproof-backend"
+
+# KV Namespaces for storing data
+[[kv_namespaces]]
+binding = "WHITELIST_STORE"
+id = "your-whitelist-kv-namespace-id"
+preview_id = "your-whitelist-kv-namespace-id"
+
+[[kv_namespaces]]
+binding = "PATTERNS_STORE"
+id = "your-patterns-kv-namespace-id"
+preview_id = "your-patterns-kv-namespace-id"
+
+[[kv_namespaces]]
+binding = "DETECTIONS_STORE"
+id = "your-detections-kv-namespace-id"
+preview_id = "your-detections-kv-namespace-id"
+
+[[kv_namespaces]]
+binding = "LOGS_STORE"
+id = "your-logs-kv-namespace-id"
+preview_id = "your-logs-kv-namespace-id"
+
+# AI binding (Cloudflare Workers AI)
+[ai]
+binding = "AI"
+
+# Environment variables
+[vars]
+# Set this to a secure random string for single-user authentication
+# Generate with: openssl rand -hex 32
+API_KEY = "your-secret-api-key-here"
+

@@ -1724,7 +1724,7 @@ export default defineContentScript({
       }
     }
 
-    browser.storage.onChanged.addListener((changes, area) => {
+    browser.storage.onChanged.addListener(async (changes, area) => {
       if (area === 'local') {
         if (changes.authToken) {
           const newToken = changes.authToken.newValue;

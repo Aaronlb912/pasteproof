@@ -3,6 +3,11 @@ import { defineConfig } from 'wxt';
 // See https://wxt.dev/api/config.html
 export default defineConfig({
   srcDir: 'src',
+  // Explicitly exclude backend folder from zip builds
+  // (srcDir already excludes it from processing, but this ensures it's not in zip)
+  zip: {
+    exclude: ['backend/**'],
+  },
   manifest: ({ browser }) => ({
     name: 'PasteProof',
     description:

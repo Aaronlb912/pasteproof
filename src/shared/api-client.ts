@@ -1,7 +1,12 @@
 // src/shared/api-client.ts
 import { CustomPattern } from './pii-detector';
 
-const API_BASE_URL = 'https://api.pasteproof.com'; // Production API base URL
+// Determine API base URL from environment variable
+// Set VITE_SELF_HOSTED_API_URL in .env to use self-hosted backend
+// If not set, defaults to production API
+const API_BASE_URL =
+  (import.meta.env.VITE_SELF_HOSTED_API_URL as string | undefined) ||
+  'https://api.pasteproof.com';
 
 export type ApiConfig = {
   apiKey: string;
@@ -534,8 +539,15 @@ export function getApiClient(): PasteProofApiClient | null {
 }
 
 export function initializeApiClient(apiKey: string): PasteProofApiClient {
-  apiClient = new PasteProofApiClient({ apiKey });
+  apiClient = new PasteProofApiClient({
+    apiKey,
+    baseUrl: API_BASE_URL,
+  });
   return apiClient;
+}
+
+export function getApiBaseUrl(): string {
+  return API_BASE_URL;
 }
 
 export function clearApiClient(): void {
